@@ -1,1387 +1,795 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>영수증 A4/A5 취합기</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
+    
     <style>
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #f1f1f1;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #c1c1c1;
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #a8a8a8;
-      }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        
+        /* 용지 규격 (96 DPI 기준) */
+        .paper-a4 { width: 794px; min-height: 1123px; }
+        .paper-a5 { width: 794px; min-height: 559px; } /* 가로 방향 A5 */
+        
+        /* 공통 캔버스 속성 */
+        .receipt-canvas {
+            background-color: white;
+            position: relative;
+            transform-origin: top center;
+            overflow: hidden; /* 삐져나온 이미지 깔끔하게 자르기 */
+        }
 
-      /* 용지 규격 (96 DPI 기준) */
-      .paper-a4 {
-        width: 794px;
-        min-height: 1123px;
-      }
-      .paper-a5 {
-        width: 794px;
-        min-height: 559px;
-      } /* 가로 방향 A5 */
+        /* 격자(가이드라인) 배경 - CSS로 안전하게 처리 */
+        .grid-bg {
+            background-color: white;
+            background-image: 
+                linear-gradient(to right, #e5e7eb 1px, transparent 1px),
+                linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
 
-      /* 공통 캔버스 속성 */
-      .receipt-canvas {
-        background-color: white;
-        position: relative;
-        transform-origin: top center;
-      }
+        /* 모드별 레이아웃 */
+        .layout-auto-a4, .layout-auto-a5 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1.5rem;
+            padding: 2rem;
+            align-content: start;
+        }
 
-      /* 격자(가이드라인) 배경 - CSS로 안전하게 처리 */
-      .grid-bg {
-        background-color: white;
-        background-image:
-          linear-gradient(to right, #e5e7eb 1px, transparent 1px),
-          linear-gradient(to bottom, #e5e7eb 1px, transparent 1px);
-        background-size: 20px 20px;
-      }
-
-      /* 모드별 레이아웃 */
-      .layout-auto-a4,
-      .layout-auto-a5 {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 1.5rem;
-        padding: 2rem;
-        align-content: start;
-      }
-
-      .exporting .hide-on-export {
-        display: none !important;
-      }
-      .exporting .border-on-free {
-        border-color: transparent !important;
-        box-shadow: none !important;
-      }
+        .exporting .hide-on-export { display: none !important; }
+        .exporting .border-on-free { border-color: transparent !important; box-shadow: none !important; }
     </style>
-  </head>
-  <body
-    class="bg-gray-100 flex flex-col font-sans h-screen overflow-hidden text-gray-800"
-  >
+</head>
+<body class="bg-gray-100 flex flex-col font-sans h-screen overflow-hidden text-gray-800">
+
     <!-- Header / Toolbar -->
-    <header
-      class="bg-white border-b border-gray-200 px-3 sm:px-4 py-3 flex items-center justify-between z-40 shadow-sm shrink-0 relative w-full h-16"
-    >
-      <!-- 타이틀 영역 -->
-      <div
-        class="flex items-center gap-2 sm:gap-4 shrink-0 z-10 overflow-hidden"
-      >
-        <div class="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="text-blue-600 shrink-0"
-          >
-            <path
-              d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"
-            />
-            <path d="M16 8h-6" />
-            <path d="M16 12h-5" />
-            <path d="M16 16h-4" />
-          </svg>
-          <h1
-            class="text-lg sm:text-xl font-bold text-gray-800 tracking-tight flex items-center gap-1.5 truncate"
-          >
-            영수증 취합기
-            <span
-              class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] sm:text-xs font-black tracking-widest shadow-sm border border-blue-200 shrink-0"
-              >v2.9</span
-            >
-          </h1>
-        </div>
-      </div>
-
-      <!-- 중앙: 핵심 컨트롤 영역 (넓은 화면) -->
-      <div
-        class="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center justify-center gap-4 xl:gap-6 w-max pointer-events-auto"
-      >
-        <!-- 용지 및 격자 토글 그룹 -->
-        <div
-          class="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shrink-0 items-center"
-          id="paper-toggle-desktop"
-        >
-          <!-- JS 랜더링 -->
-        </div>
-
-        <!-- 레이아웃 토글 -->
-        <div
-          class="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shrink-0"
-          id="mode-toggle-desktop"
-        >
-          <!-- JS 랜더링 -->
-        </div>
-
-        <div class="h-6 w-px bg-gray-300"></div>
-
-        <!-- 기능 액션 버튼들 -->
-        <div class="flex items-center gap-2 xl:gap-3 shrink-0">
-          <button
-            onclick="clearAllPages()"
-            class="p-2 xl:p-2.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors shadow-sm"
-            title="전체 초기화"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M3 6h18" />
-              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-            </svg>
-          </button>
-          <button
-            onclick="copyCurrentPage()"
-            class="btn-copy-page p-2 xl:p-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-            title="현재 페이지 복사"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-              <path
-                d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-              />
-            </svg>
-          </button>
-
-          <!-- 전체 복사 버튼 (툴팁 통합으로 UI 간소화) -->
-          <div class="relative group flex items-center justify-center">
-            <button
-              onclick="copyAllPages()"
-              class="btn-copy-all p-2 xl:p-2.5 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors shadow-sm"
-              aria-label="전체 복사"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                <path
-                  d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                />
-              </svg>
-            </button>
-            <div
-              class="absolute top-full mt-2 right-0 w-max px-4 py-3 bg-gray-800 text-white text-xs font-medium rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50"
-            >
-              <div class="font-bold text-sm mb-1.5 text-blue-300">
-                전체 페이지 복사
-              </div>
-              메모리 안정성을 위해 <b>최대 5장(2열 10장)</b>까지만
-              복사됩니다.<br />
-              <span class="text-gray-300 text-[10px] mt-1 block"
-                >(다량은 PDF 또는 ZIP 저장을 이용해주세요)</span
-              >
-              <div
-                class="absolute -top-1.5 right-3 border-4 border-transparent border-b-gray-800"
-              ></div>
+    <header class="bg-white border-b border-gray-200 px-3 sm:px-4 py-3 flex items-center justify-between z-40 shadow-sm shrink-0 relative w-full h-16">
+        
+        <!-- 타이틀 영역 -->
+        <div class="flex items-center gap-2 sm:gap-4 shrink-0 z-10 overflow-hidden">
+            <div class="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600 shrink-0"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6"/><path d="M16 12h-5"/><path d="M16 16h-4"/></svg>
+                <h1 class="text-lg sm:text-xl font-bold text-gray-800 tracking-tight flex items-center gap-1.5 truncate">
+                    영수증 취합기 
+                    <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] sm:text-xs font-black tracking-widest shadow-sm border border-blue-200 shrink-0">v3.0</span>
+                </h1>
             </div>
-          </div>
-
-          <button
-            onclick="exportImages()"
-            class="btn-export-img p-2 xl:p-2.5 text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors shadow-sm"
-            title="PNG 저장"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-              <circle cx="9" cy="9" r="2" />
-              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-            </svg>
-          </button>
-          <button
-            onclick="exportPDF()"
-            class="btn-export-pdf p-2 xl:p-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-            title="PDF 저장"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" x2="12" y1="15" y2="3" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- 우측 그룹: 모바일용 토글 + 툴팁 그룹 -->
-      <div class="flex items-center gap-2 sm:gap-3 z-10 shrink-0">
-        <div
-          class="flex lg:hidden bg-gray-100 p-0.5 sm:p-1 rounded-lg border border-gray-200 shrink-0 items-center"
-          id="paper-toggle-mobile"
-        >
-          <!-- JS 랜더링 -->
         </div>
 
-        <div
-          class="flex lg:hidden bg-gray-100 p-0.5 sm:p-1 rounded-lg border border-gray-200 shrink-0"
-          id="mode-toggle-mobile"
-        >
-          <!-- JS 랜더링 -->
+        <!-- 중앙: 핵심 컨트롤 영역 (넓은 화면) -->
+        <div class="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center justify-center gap-4 xl:gap-6 w-max pointer-events-auto">
+            
+            <!-- 용지 및 격자 토글 그룹 -->
+            <div class="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shrink-0 items-center" id="paper-toggle-desktop">
+                <!-- JS 랜더링 -->
+            </div>
+
+            <!-- 레이아웃 토글 -->
+            <div class="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shrink-0" id="mode-toggle-desktop">
+                <!-- JS 랜더링 -->
+            </div>
+
+            <div class="h-6 w-px bg-gray-300"></div>
+
+            <!-- 기능 액션 버튼들 -->
+            <div class="flex items-center gap-2 xl:gap-3 shrink-0">
+                <button onclick="clearAllPages()" class="p-2 xl:p-2.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors shadow-sm" title="전체 초기화">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                </button>
+                <button onclick="copyCurrentPage()" class="btn-copy-page p-2 xl:p-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" title="현재 페이지 복사">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </button>
+                
+                <!-- 전체 복사 버튼 -->
+                <div class="relative group flex items-center justify-center">
+                    <button onclick="copyAllPages()" class="btn-copy-all p-2 xl:p-2.5 text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors shadow-sm" aria-label="전체 복사">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    </button>
+                    <div class="absolute top-full mt-2 right-0 w-max px-4 py-3 bg-gray-800 text-white text-xs font-medium rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
+                        <div class="font-bold text-sm mb-1.5 text-blue-300">전체 페이지 복사</div>
+                        메모리 안정성을 위해 <b>최대 5장(2열 10장)</b>까지만 복사됩니다.<br/>
+                        <span class="text-gray-300 text-[10px] mt-1 block">(다량은 PDF 또는 ZIP 저장을 이용해주세요)</span>
+                        <div class="absolute -top-1.5 right-3 border-4 border-transparent border-b-gray-800"></div>
+                    </div>
+                </div>
+
+                <button onclick="exportImages()" class="btn-export-img p-2 xl:p-2.5 text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors shadow-sm" title="PNG 저장">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                </button>
+                <button onclick="exportPDF()" class="btn-export-pdf p-2 xl:p-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm" title="PDF 저장">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                </button>
+            </div>
         </div>
 
-        <!-- 툴팁 그룹 -->
-        <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          <div
-            class="relative group flex items-center justify-center cursor-help"
-          >
-            <div
-              class="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-50 text-amber-500 border border-amber-200 shadow-sm hover:bg-amber-100 transition-colors"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
-                />
-                <path d="M12 9v4" />
-                <path d="M12 17h.01" />
-              </svg>
+        <!-- 우측 그룹: 모바일용 토글 + 툴팁 그룹 -->
+        <div class="flex items-center gap-2 sm:gap-3 z-10 shrink-0">
+            
+            <div class="flex lg:hidden bg-gray-100 p-0.5 sm:p-1 rounded-lg border border-gray-200 shrink-0 items-center" id="paper-toggle-mobile">
+                <!-- JS 랜더링 -->
             </div>
-            <div
-              class="absolute top-full mt-3 right-0 w-max px-4 py-2 bg-gray-800 text-white text-xs sm:text-sm font-medium rounded shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50"
-            >
-              꼭 상품 관련 영수증은 <b>V(공제) 표시</b>를 해주세요!
-              <div
-                class="absolute -top-1.5 right-3 border-4 border-transparent border-b-gray-800"
-              ></div>
-            </div>
-          </div>
 
-          <div
-            class="relative group flex items-center justify-center cursor-help"
-          >
-            <div
-              class="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-50 text-blue-500 border border-blue-200 shadow-sm hover:bg-blue-100 transition-colors"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                <path d="M12 17h.01" />
-              </svg>
+            <div class="flex lg:hidden bg-gray-100 p-0.5 sm:p-1 rounded-lg border border-gray-200 shrink-0" id="mode-toggle-mobile">
+                <!-- JS 랜더링 -->
             </div>
-            <div
-              class="absolute top-full mt-3 right-0 w-max px-4 py-3 bg-gray-800 text-white text-xs sm:text-sm font-medium rounded shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex gap-4 sm:gap-6"
-            >
-              <div class="flex flex-col gap-2.5 sm:gap-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-red-400"
-                    ><svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg
-                  ></span>
-                  전체 초기화
+
+            <!-- 툴팁 그룹 -->
+            <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                <div class="relative group flex items-center justify-center cursor-help">
+                    <div class="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-amber-50 text-amber-500 border border-amber-200 shadow-sm hover:bg-amber-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                    </div>
+                    <div class="absolute top-full mt-3 right-0 w-max px-4 py-2 bg-gray-800 text-white text-xs sm:text-sm font-medium rounded shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
+                        꼭 상품 관련 영수증은 <b>V(공제) 표시</b>를 해주세요!
+                        <div class="absolute -top-1.5 right-3 border-4 border-transparent border-b-gray-800"></div>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-gray-300"
-                    ><svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                      <path
-                        d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                      /></svg
-                  ></span>
-                  현재 페이지 복사
+
+                <div class="relative group flex items-center justify-center cursor-help">
+                    <div class="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-50 text-blue-500 border border-blue-200 shadow-sm hover:bg-blue-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+                    </div>
+                    <div class="absolute top-full mt-3 right-0 w-max px-4 py-3 bg-gray-800 text-white text-xs sm:text-sm font-medium rounded shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 flex gap-4 sm:gap-6">
+                        <div class="flex flex-col gap-2.5 sm:gap-3">
+                            <div class="flex items-center gap-2"><span class="text-red-400"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></span> 전체 초기화</div>
+                            <div class="flex items-center gap-2"><span class="text-gray-300"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span> 현재 페이지 복사</div>
+                            <div class="flex items-center gap-2"><span class="text-blue-400"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span> 전체 페이지 복사</div>
+                        </div>
+                        <div class="flex flex-col gap-2.5 sm:gap-3">
+                            <div class="flex items-center gap-2"><span class="text-teal-400"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></span> PNG 저장</div>
+                            <div class="flex items-center gap-2"><span class="text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></span> PDF 저장</div>
+                        </div>
+                        <div class="absolute -top-1.5 right-2 sm:right-3 border-4 border-transparent border-b-gray-800"></div>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-blue-400"
-                    ><svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                      <path
-                        d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                      /></svg
-                  ></span>
-                  전체 페이지 복사
-                </div>
-              </div>
-              <div class="flex flex-col gap-2.5 sm:gap-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-teal-400"
-                    ><svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-                      <circle cx="9" cy="9" r="2" />
-                      <path
-                        d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"
-                      /></svg
-                  ></span>
-                  PNG 저장
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="text-blue-500"
-                    ><svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" x2="12" y1="15" y2="3" /></svg
-                  ></span>
-                  PDF 저장
-                </div>
-              </div>
-              <div
-                class="absolute -top-1.5 right-2 sm:right-3 border-4 border-transparent border-b-gray-800"
-              ></div>
             </div>
-          </div>
         </div>
-      </div>
     </header>
 
     <!-- Main Layout -->
     <div class="flex flex-1 overflow-hidden relative w-full">
-      <!-- Sidebar (Drawer) -->
-      <aside
-        id="sidebar-drawer"
-        class="absolute left-0 top-0 h-full w-64 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.15)] z-40 transform transition-transform duration-300 ease-in-out flex flex-col -translate-x-full"
-      >
-        <div
-          class="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50"
-        >
-          <span class="font-semibold text-gray-700 text-sm" id="page-count-text"
-            >페이지 목록 (1)</span
-          >
-        </div>
-        <div
-          class="flex-1 overflow-y-auto p-3 space-y-2"
-          id="sidebar-list"
-        ></div>
-        <div class="p-4 border-t border-gray-100 bg-white">
-          <button
-            onclick="addNewPage()"
-            class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 border-dashed rounded-lg text-sm font-medium text-gray-700 transition-colors"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M5 12h14" />
-              <path d="M12 5v14" />
-            </svg>
-            새 페이지 추가
-          </button>
+        
+        <!-- Sidebar (Drawer) -->
+        <aside id="sidebar-drawer" class="absolute left-0 top-0 h-full w-64 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.15)] z-40 transform transition-transform duration-300 ease-in-out flex flex-col -translate-x-full">
+            <div class="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <span class="font-semibold text-gray-700 text-sm" id="page-count-text">페이지 목록 (1)</span>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-2" id="sidebar-list"></div>
+            <div class="p-4 border-t border-gray-100 bg-white">
+                <button onclick="addNewPage()" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 border-dashed rounded-lg text-sm font-medium text-gray-700 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> 새 페이지 추가
+                </button>
+            </div>
+
+            <!-- 사이드바 열기/닫기 탭 버튼 -->
+            <button onclick="toggleSidebar()" class="absolute -right-10 top-1/2 -translate-y-1/2 w-10 h-24 bg-white border border-l-0 border-gray-200 rounded-r-xl flex flex-col items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.05)] text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors group cursor-pointer">
+                <svg id="sidebar-icon-svg" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m13 18 6-6-6-6"/><path d="m6 18 6-6-6-6"/>
+                </svg>
+            </button>
+        </aside>
+
+        <!-- Workspace Area -->
+        <main class="flex-1 overflow-auto bg-gray-200/50 p-4 sm:p-10 relative w-full" id="workspace-scroll-area">
+            <div id="workspace-pages-wrapper" class="flex flex-col items-center gap-10 pb-32 w-full min-h-full">
+                <!-- JS 동적 렌더링 -->
+            </div>
+        </main>
+        
+        <!-- 우측 상단 플로팅 독 (작은 화면에서만 표시, 세로 정렬) -->
+        <div class="fixed top-20 right-4 sm:right-6 lg:hidden z-50 bg-white/95 backdrop-blur-xl shadow-lg border border-gray-200/60 rounded-xl p-2 flex flex-col gap-2 pointer-events-auto transition-all">
+            <button onclick="clearAllPages()" class="p-2.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors" title="전체 초기화">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </button>
+            <button onclick="copyCurrentPage()" class="btn-copy-page p-2.5 text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors" title="현재 페이지 복사">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            </button>
+            <button onclick="copyAllPages()" class="btn-copy-all p-2.5 text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shadow-sm" title="전체 복사 (최대 10장)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            </button>
+            <button onclick="exportImages()" class="btn-export-img p-2.5 text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors shadow-sm" title="PNG 저장">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            </button>
+            <button onclick="exportPDF()" class="btn-export-pdf p-2.5 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm" title="PDF 저장">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            </button>
         </div>
 
-        <!-- 사이드바 열기/닫기 탭 버튼 -->
-        <button
-          onclick="toggleSidebar()"
-          class="absolute -right-10 top-1/2 -translate-y-1/2 w-10 h-24 bg-white border border-l-0 border-gray-200 rounded-r-xl flex flex-col items-center justify-center shadow-[4px_0_12px_rgba(0,0,0,0.05)] text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors group cursor-pointer"
-        >
-          <svg
-            id="sidebar-icon-svg"
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="m13 18 6-6-6-6" />
-            <path d="m6 18 6-6-6-6" />
-          </svg>
-        </button>
-      </aside>
-
-      <!-- Workspace Area -->
-      <main
-        class="flex-1 overflow-auto bg-gray-200/50 p-4 sm:p-10 relative w-full"
-        id="workspace-scroll-area"
-      >
-        <div
-          id="workspace-pages-wrapper"
-          class="flex flex-col items-center pb-32 w-full min-h-full"
-        >
-          <!-- JS 동적 렌더링 -->
+        <!-- 하단 중앙 고정 네비게이션 (페이지 번호) -->
+        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+            <div id="floating-pagination" class="bg-white/95 backdrop-blur-md shadow-lg border border-gray-200 rounded-full px-3 py-1.5 flex items-center gap-2 pointer-events-auto transition-opacity duration-300">
+                <!-- JS 동적 렌더링 -->
+            </div>
         </div>
-      </main>
 
-      <!-- 우측 상단 플로팅 독 (작은 화면에서만 표시, 세로 정렬) -->
-      <div
-        class="fixed top-20 right-4 sm:right-6 lg:hidden z-50 bg-white/95 backdrop-blur-xl shadow-lg border border-gray-200/60 rounded-xl p-2 flex flex-col gap-2 pointer-events-auto transition-all"
-      >
-        <button
-          onclick="clearAllPages()"
-          class="p-2.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
-          title="전체 초기화"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M3 6h18" />
-            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-          </svg>
-        </button>
-        <button
-          onclick="copyCurrentPage()"
-          class="btn-copy-page p-2.5 text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg transition-colors"
-          title="현재 페이지 복사"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-          </svg>
-        </button>
-        <button
-          onclick="copyAllPages()"
-          class="btn-copy-all p-2.5 text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shadow-sm"
-          title="전체 복사 (최대 10장)"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-          </svg>
-        </button>
-        <button
-          onclick="exportImages()"
-          class="btn-export-img p-2.5 text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors shadow-sm"
-          title="PNG 저장"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-            <circle cx="9" cy="9" r="2" />
-            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-          </svg>
-        </button>
-        <button
-          onclick="exportPDF()"
-          class="btn-export-pdf p-2.5 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
-          title="PDF 저장"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" x2="12" y1="15" y2="3" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- 하단 중앙 고정 네비게이션 (페이지 번호) -->
-      <div
-        class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
-      >
-        <div
-          id="floating-pagination"
-          class="bg-white/95 backdrop-blur-md shadow-lg border border-gray-200 rounded-full px-3 py-1.5 flex items-center gap-2 pointer-events-auto transition-opacity duration-300"
-        >
-          <!-- JS 동적 렌더링 -->
-        </div>
-      </div>
     </div>
 
     <!-- Hidden Render Area -->
-    <div
-      id="hidden-render-area"
-      class="fixed top-[-20000px] left-[-20000px] opacity-0 pointer-events-none"
-    ></div>
+    <div id="hidden-render-area" class="fixed top-[-20000px] left-[-20000px] opacity-0 pointer-events-none"></div>
 
     <!-- Loading Overlay -->
-    <div
-      id="loading-overlay"
-      class="fixed inset-0 z-[9999999] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center hidden pointer-events-auto"
-    >
-      <svg
-        class="animate-spin text-blue-600 mb-4"
-        xmlns="http://www.w3.org/2000/svg"
-        width="48"
-        height="48"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-      </svg>
-      <h3 id="loading-title" class="text-lg font-bold text-gray-800">
-        작업 처리 중...
-      </h3>
-      <p id="loading-text" class="text-gray-500 mt-2 text-sm text-center px-4">
-        잠시만 기다려주세요
-      </p>
+    <div id="loading-overlay" class="fixed inset-0 z-[9999999] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center hidden pointer-events-auto">
+        <svg class="animate-spin text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <h3 id="loading-title" class="text-lg font-bold text-gray-800">작업 처리 중...</h3>
+        <p id="loading-text" class="text-gray-500 mt-2 text-sm text-center px-4">잠시만 기다려주세요</p>
     </div>
 
-    <!-- Custom Modal (Z-Index 버그 수정: z-[999999] 적용) -->
-    <div
-      id="custom-modal"
-      class="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden"
-    >
-      <div
-        class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 pointer-events-auto z-50"
-      >
-        <h3 id="modal-title" class="text-lg font-bold text-gray-900 mb-2"></h3>
-        <p id="modal-desc" class="text-gray-600 mb-6 text-sm"></p>
-        <div class="flex justify-end gap-3">
-          <button
-            onclick="closeModal()"
-            class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            취소
-          </button>
-          <button
-            id="modal-confirm-btn"
-            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            확인
-          </button>
+    <!-- Custom Modal -->
+    <div id="custom-modal" class="fixed inset-0 z-[999999] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 pointer-events-auto z-50">
+            <h3 id="modal-title" class="text-lg font-bold text-gray-900 mb-2"></h3>
+            <p id="modal-desc" class="text-gray-600 mb-6 text-sm"></p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">취소</button>
+                <button id="modal-confirm-btn" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">확인</button>
+            </div>
         </div>
-      </div>
     </div>
 
-    <!-- 전체 복사 설정 모달 (신규) -->
-    <div
-      id="copy-layout-modal"
-      class="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center"
-    >
-      <div
-        class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 pointer-events-auto"
-      >
-        <div class="flex items-center gap-3 mb-4">
-          <div
-            class="w-10 h-10 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-              <path
-                d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-              />
-            </svg>
-          </div>
-          <h3 class="text-lg font-bold text-gray-900">전체 복사 설정</h3>
-        </div>
-        <p class="text-gray-600 text-sm mb-3 leading-relaxed">
-          여유 있게 <b>최대 5장(2열의 경우 10장)</b>까지만 사용을 권장합니다.<br />
-          <span class="text-gray-400 text-xs"
-            >메모리 초과 시 복사가 실패할 수 있습니다.</span
-          >
-        </p>
+    <!-- 전체 복사 설정 모달 -->
+    <div id="copy-layout-modal" class="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 pointer-events-auto">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900">전체 복사 설정</h3>
+            </div>
+            <p class="text-gray-600 text-sm mb-3 leading-relaxed">
+                여유 있게 <b>최대 5장(2열의 경우 10장)</b>까지만 사용을 권장합니다.<br />
+                <span class="text-gray-400 text-xs">메모리 초과 시 복사가 실패할 수 있습니다.</span>
+            </p>
 
-        <!-- 배열 옵션 선택 -->
-        <div class="mb-5 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <p class="text-xs font-bold text-gray-700 mb-2">이미지 배열 방식</p>
-          <div class="flex gap-4">
-            <label
-              class="flex items-center gap-1.5 text-sm cursor-pointer hover:text-blue-700"
-            >
-              <input
-                type="radio"
-                name="copy-layout"
-                value="1"
-                checked
-                class="accent-blue-600 w-4 h-4"
-              />
-              1열 (세로)
-            </label>
-            <label
-              class="flex items-center gap-1.5 text-sm cursor-pointer hover:text-blue-700"
-            >
-              <input
-                type="radio"
-                name="copy-layout"
-                value="2"
-                class="accent-blue-600 w-4 h-4"
-              />
-              2열 (나란히)
-            </label>
-          </div>
-        </div>
+            <div class="mb-5 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p class="text-xs font-bold text-gray-700 mb-2">이미지 배열 방식</p>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-1.5 text-sm cursor-pointer hover:text-blue-700">
+                        <input type="radio" name="copy-layout" value="1" checked class="accent-blue-600 w-4 h-4" />
+                        1열 (세로)
+                    </label>
+                    <label class="flex items-center gap-1.5 text-sm cursor-pointer hover:text-blue-700">
+                        <input type="radio" name="copy-layout" value="2" class="accent-blue-600 w-4 h-4" />
+                        2열 (나란히)
+                    </label>
+                </div>
+            </div>
 
-        <div class="flex justify-end gap-2">
-          <button
-            onclick="closeCopyLayoutModal()"
-            class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            취소
-          </button>
-          <button
-            onclick="executeCopyAll()"
-            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            복사 진행
-          </button>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeCopyLayoutModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">취소</button>
+                <button onclick="executeCopyAll()" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">복사 진행</button>
+            </div>
         </div>
-      </div>
     </div>
 
     <!-- App Logic -->
     <script>
-      const ICONS = {
-        copy: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
-        img: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>',
-        pdf: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
-        spinner:
-          '<svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>',
-      };
+        const ICONS = {
+            copy: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+            img: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>',
+            pdf: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
+            spinner: '<svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>'
+        };
 
-      let state = {
-        pages: [{ id: "page-" + Date.now(), images: [] }],
-        currentPageId: "",
-        mode: "free",
-        paperSize: "a4",
-        showGrid: false, // 격자 가이드라인 상태
-        maxZIndex: 1,
-        isExporting: false,
-        isSidebarOpen: false,
-      };
+        let state = {
+            pages: [{ id: 'page-' + Date.now(), images: [] }],
+            currentPageId: '',
+            mode: 'free', 
+            paperSize: 'a4', 
+            showGrid: false, 
+            maxZIndex: 1,
+            isExporting: false,
+            isSidebarOpen: false
+        };
 
-      // --- History Management (Undo/Redo) ---
-      let appHistory = [];
-      let historyIndex = -1;
-      const MAX_HISTORY = 10;
+        // --- History Management (Undo/Redo) ---
+        let appHistory = [];
+        let historyIndex = -1;
+        const MAX_HISTORY = 10; 
 
-      function recordHistory() {
-        if (historyIndex < appHistory.length - 1) {
-          appHistory = appHistory.slice(0, historyIndex + 1);
-        }
-
-        appHistory.push(
-          JSON.stringify({
-            pages: state.pages,
-            mode: state.mode,
-            paperSize: state.paperSize || "a4",
-            showGrid: state.showGrid || false,
-            maxZIndex: state.maxZIndex,
-            currentPageId: state.currentPageId,
-          }),
-        );
-
-        if (appHistory.length > MAX_HISTORY) {
-          appHistory.shift();
-        }
-        historyIndex = appHistory.length - 1;
-      }
-
-      function undo() {
-        if (historyIndex > 0) {
-          historyIndex--;
-          restoreSnapshot(appHistory[historyIndex]);
-        }
-      }
-
-      function redo() {
-        if (historyIndex < appHistory.length - 1) {
-          historyIndex++;
-          restoreSnapshot(appHistory[historyIndex]);
-        }
-      }
-
-      function restoreSnapshot(snapshotStr) {
-        const snapshot = JSON.parse(snapshotStr);
-        state.pages = snapshot.pages;
-        state.mode = snapshot.mode;
-        state.paperSize = snapshot.paperSize || "a4";
-        state.showGrid = snapshot.showGrid || false;
-        state.maxZIndex = snapshot.maxZIndex;
-        state.currentPageId = snapshot.currentPageId;
-        saveState();
-        renderAll();
-        scrollToPage(state.currentPageId);
-      }
-
-      function init() {
-        const savedData = localStorage.getItem("receipts_app_html");
-        if (savedData) {
-          try {
-            const parsed = JSON.parse(savedData);
-            state.pages = parsed.pages || state.pages;
-            state.currentPageId = parsed.currentPageId || state.pages[0].id;
-            state.mode = parsed.mode || "free";
-            state.paperSize = parsed.paperSize || "a4";
-            state.showGrid = parsed.showGrid || false;
-            state.maxZIndex = parsed.maxZIndex || 1;
-            state.isSidebarOpen = parsed.isSidebarOpen || false;
-          } catch (e) {
-            console.error("Data load failed", e);
-          }
-        } else {
-          state.currentPageId = state.pages[0].id;
-        }
-
-        window.addEventListener("paste", handlePaste);
-        setupKeyboardShortcuts();
-
-        renderAll();
-        recordHistory();
-      }
-
-      function setupKeyboardShortcuts() {
-        window.addEventListener("keydown", (e) => {
-          if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
-            return;
-
-          const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-          const cmdKey = isMac ? e.metaKey : e.ctrlKey;
-
-          if (cmdKey && e.key.toLowerCase() === "z") {
-            e.preventDefault();
-            if (e.shiftKey) redo();
-            else undo();
-          } else if (cmdKey && e.key.toLowerCase() === "y") {
-            e.preventDefault();
-            redo();
-          }
-        });
-      }
-
-      function saveState() {
-        localStorage.setItem(
-          "receipts_app_html",
-          JSON.stringify({
-            pages: state.pages,
-            currentPageId: state.currentPageId,
-            mode: state.mode,
-            paperSize: state.paperSize,
-            showGrid: state.showGrid,
-            maxZIndex: state.maxZIndex,
-            isSidebarOpen: state.isSidebarOpen,
-          }),
-        );
-      }
-
-      function findImageAndPage(imgId) {
-        for (let p of state.pages) {
-          const img = p.images.find((i) => i.id === imgId);
-          if (img) return { page: p, img };
-        }
-        return null;
-      }
-
-      async function handlePaste(e) {
-        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
-          return;
-
-        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-        let imagePasted = false;
-
-        for (let index in items) {
-          const item = items[index];
-          if (item.kind === "file" && item.type.indexOf("image/") !== -1) {
-            const file = item.getAsFile();
-            const base64Image = await compressImage(file);
-
-            const pageIndex = state.pages.findIndex(
-              (p) => p.id === state.currentPageId,
-            );
-            if (pageIndex > -1) {
-              state.maxZIndex++;
-              const imgCount = state.pages[pageIndex].images.length;
-              const offset = (imgCount * 20) % 200;
-
-              state.pages[pageIndex].images.push({
-                id: "img-" + Date.now() + Math.random(),
-                src: base64Image,
-                x: 100 + offset,
-                y: 100 + offset,
-                width: 300,
-                zIndex: state.maxZIndex,
-                isTaxDeductible: false,
-              });
-              imagePasted = true;
+        function recordHistory() {
+            if (historyIndex < appHistory.length - 1) {
+                appHistory = appHistory.slice(0, historyIndex + 1);
             }
-          }
+            
+            appHistory.push(JSON.stringify({
+                pages: state.pages,
+                mode: state.mode,
+                paperSize: state.paperSize || 'a4',
+                showGrid: state.showGrid || false,
+                maxZIndex: state.maxZIndex,
+                currentPageId: state.currentPageId
+            }));
+            
+            if (appHistory.length > MAX_HISTORY) {
+                appHistory.shift();
+            }
+            historyIndex = appHistory.length - 1;
         }
 
-        if (imagePasted) {
-          recordHistory();
-          saveState();
-          renderAll();
-          scrollToPage(state.currentPageId);
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                restoreSnapshot(appHistory[historyIndex]);
+            }
         }
-      }
 
-      function compressImage(file) {
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-              const canvas = document.createElement("canvas");
-              let { width, height } = img;
-              const maxDim = 1200;
+        function redo() {
+            if (historyIndex < appHistory.length - 1) {
+                historyIndex++;
+                restoreSnapshot(appHistory[historyIndex]);
+            }
+        }
 
-              if (width > maxDim || height > maxDim) {
-                if (width > height) {
-                  height = Math.round((height * maxDim) / width);
-                  width = maxDim;
-                } else {
-                  width = Math.round((width * maxDim) / height);
-                  height = maxDim;
+        function restoreSnapshot(snapshotStr) {
+            const snapshot = JSON.parse(snapshotStr);
+            state.pages = snapshot.pages;
+            state.mode = snapshot.mode;
+            state.paperSize = snapshot.paperSize || 'a4';
+            state.showGrid = snapshot.showGrid || false;
+            state.maxZIndex = snapshot.maxZIndex;
+            state.currentPageId = snapshot.currentPageId;
+            saveState();
+            renderAll();
+            scrollToPage(state.currentPageId);
+        }
+
+        function init() {
+            const savedData = localStorage.getItem('receipts_app_html');
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    state.pages = parsed.pages || state.pages;
+                    state.currentPageId = parsed.currentPageId || state.pages[0].id;
+                    state.mode = parsed.mode || 'free';
+                    state.paperSize = parsed.paperSize || 'a4';
+                    state.showGrid = parsed.showGrid || false;
+                    state.maxZIndex = parsed.maxZIndex || 1;
+                    state.isSidebarOpen = parsed.isSidebarOpen || false;
+                } catch(e) { console.error("Data load failed", e); }
+            } else {
+                state.currentPageId = state.pages[0].id;
+            }
+
+            window.addEventListener('paste', handlePaste);
+            setupKeyboardShortcuts(); 
+            
+            renderAll();
+            recordHistory(); 
+        }
+
+        function setupKeyboardShortcuts() {
+            window.addEventListener('keydown', (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                const cmdKey = isMac ? e.metaKey : e.ctrlKey;
+                
+                if (cmdKey && e.key.toLowerCase() === 'z') {
+                    e.preventDefault(); 
+                    if (e.shiftKey) redo(); 
+                    else undo();
+                } 
+                else if (cmdKey && e.key.toLowerCase() === 'y') {
+                    e.preventDefault();
+                    redo();
                 }
-              }
-
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext("2d");
-              ctx.drawImage(img, 0, 0, width, height);
-              resolve(canvas.toDataURL("image/jpeg", 0.8));
-            };
-            img.src = e.target.result;
-          };
-          reader.readAsDataURL(file);
-        });
-      }
-
-      function toggleSidebar() {
-        state.isSidebarOpen = !state.isSidebarOpen;
-        saveState();
-        renderSidebar();
-      }
-
-      function addNewPage() {
-        insertPageAt(state.pages.length);
-      }
-
-      function insertPageAt(index) {
-        const newId = "page-" + Date.now();
-        state.pages.splice(index, 0, { id: newId, images: [] });
-        state.currentPageId = newId;
-        recordHistory();
-        saveState();
-        renderAll();
-        scrollToPage(newId);
-      }
-
-      function deletePage(id, event) {
-        event.stopPropagation();
-        if (state.pages.length <= 1) {
-          alert("마지막 페이지는 삭제할 수 없습니다.");
-          return;
+            });
         }
-        openModal(
-          "페이지 삭제",
-          "이 페이지와 포함된 모든 영수증을 삭제하시겠습니까?",
-          () => {
-            state.pages = state.pages.filter((p) => p.id !== id);
-            if (state.currentPageId === id) {
-              state.currentPageId = state.pages[0].id;
+
+        function saveState() {
+            localStorage.setItem('receipts_app_html', JSON.stringify({
+                pages: state.pages,
+                currentPageId: state.currentPageId,
+                mode: state.mode,
+                paperSize: state.paperSize,
+                showGrid: state.showGrid,
+                maxZIndex: state.maxZIndex,
+                isSidebarOpen: state.isSidebarOpen
+            }));
+        }
+
+        function findImageAndPage(imgId) {
+            for (let p of state.pages) {
+                const img = p.images.find(i => i.id === imgId);
+                if (img) return { page: p, img };
             }
-            recordHistory();
-            saveState();
-            renderAll();
-          },
-        );
-      }
-
-      function clearAllPages() {
-        openModal(
-          "전체 초기화",
-          "모든 페이지와 이미지를 삭제합니다. 복구할 수 없습니다.",
-          () => {
-            const newId = "page-" + Date.now();
-            state.pages = [{ id: newId, images: [] }];
-            state.currentPageId = newId;
-            recordHistory();
-            saveState();
-            renderAll();
-          },
-        );
-      }
-
-      function selectPage(id) {
-        state.currentPageId = id;
-        saveState();
-        renderAll();
-        scrollToPage(id);
-      }
-
-      function scrollToPage(pageId) {
-        const el = document.getElementById(`view-page-${pageId}`);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-
-      function switchMode(newMode) {
-        const hasImages = state.pages.some((p) => p.images.length > 0);
-        if (state.mode === "free" && newMode === "auto" && hasImages) {
-          openModal(
-            "자동 정렬 모드 전환",
-            "직접 배치한 레이아웃이 초기화되고 자동 정렬됩니다. 계속하시겠습니까?",
-            () => {
-              state.mode = "auto";
-              recordHistory();
-              saveState();
-              renderAll();
-            },
-          );
-        } else {
-          state.mode = newMode;
-          recordHistory();
-          saveState();
-          renderAll();
+            return null;
         }
-      }
 
-      function setPaperSize(size) {
-        if (state.paperSize === size) return;
-        state.paperSize = size;
-        recordHistory();
-        saveState();
-        renderAll();
-      }
+        async function handlePaste(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-      // 격자 가이드 토글 함수
-      function toggleGrid() {
-        state.showGrid = !state.showGrid;
-        saveState();
-        renderAll();
-      }
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            let imagePasted = false;
 
-      function renderAll() {
-        const scrollArea = document.getElementById("workspace-scroll-area");
-        const scrollTop = scrollArea ? scrollArea.scrollTop : 0;
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {
+                    const file = item.getAsFile();
+                    const base64Image = await compressImage(file);
+                    
+                    const pageIndex = state.pages.findIndex(p => p.id === state.currentPageId);
+                    if (pageIndex > -1) {
+                        state.maxZIndex++;
+                        const imgCount = state.pages[pageIndex].images.length;
+                        const offset = (imgCount * 20) % 200;
 
-        renderToolbar();
-        renderSidebar();
-        renderWorkspace();
+                        state.pages[pageIndex].images.push({
+                            id: 'img-' + Date.now() + Math.random(),
+                            src: base64Image,
+                            x: 100 + offset,
+                            y: 100 + offset,
+                            width: 300, 
+                            zIndex: state.maxZIndex,
+                            isTaxDeductible: false 
+                        });
+                        imagePasted = true;
+                    }
+                }
+            }
 
-        if (scrollArea) scrollArea.scrollTop = scrollTop;
-      }
+            if (imagePasted) {
+                recordHistory(); 
+                saveState();
+                renderAll();
+                scrollToPage(state.currentPageId);
+            }
+        }
 
-      function renderToolbar() {
-        const modeContainerDesktop = document.getElementById(
-          "mode-toggle-desktop",
-        );
-        const modeContainerMobile =
-          document.getElementById("mode-toggle-mobile");
-        const paperContainerDesktop = document.getElementById(
-          "paper-toggle-desktop",
-        );
-        const paperContainerMobile = document.getElementById(
-          "paper-toggle-mobile",
-        );
+        function compressImage(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let { width, height } = img;
+                        const maxDim = 1200;
 
-        const isAuto = state.mode === "auto";
-        const isA4 = state.paperSize === "a4";
+                        if (width > maxDim || height > maxDim) {
+                            if (width > height) {
+                                height = Math.round((height * maxDim) / width);
+                                width = maxDim;
+                            } else {
+                                width = Math.round((width * maxDim) / height);
+                                height = maxDim;
+                            }
+                        }
 
-        // 용지 + 격자 토글 렌더링
-        const htmlPaperDesktop = `
-                <button onclick="setPaperSize('a4')" class="flex items-center justify-center px-3 sm:px-4 py-1.5 rounded-md text-sm font-bold transition-all ${isA4 ? "bg-white shadow-sm text-indigo-600" : "text-gray-500 hover:text-gray-700"}" title="A4 용지">
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function toggleSidebar() {
+            state.isSidebarOpen = !state.isSidebarOpen;
+            saveState(); 
+            renderSidebar();
+        }
+
+        function addNewPage() {
+            insertPageAt(state.pages.length);
+        }
+
+        function insertPageAt(index) {
+            const newId = 'page-' + Date.now();
+            state.pages.splice(index, 0, { id: newId, images: [] });
+            state.currentPageId = newId;
+            recordHistory(); 
+            saveState();
+            renderAll();
+            scrollToPage(newId);
+        }
+
+        function deletePage(id, event) {
+            event.stopPropagation();
+            if (state.pages.length <= 1) {
+                alert("마지막 페이지는 삭제할 수 없습니다.");
+                return;
+            }
+            openModal('페이지 삭제', '이 페이지와 포함된 모든 영수증을 삭제하시겠습니까?', () => {
+                state.pages = state.pages.filter(p => p.id !== id);
+                if (state.currentPageId === id) {
+                    state.currentPageId = state.pages[0].id;
+                }
+                recordHistory(); 
+                saveState();
+                renderAll();
+            });
+        }
+
+        function clearAllPages() {
+            openModal('전체 초기화', '모든 페이지와 이미지를 삭제합니다. 복구할 수 없습니다.', () => {
+                const newId = 'page-' + Date.now();
+                state.pages = [{ id: newId, images: [] }];
+                state.currentPageId = newId;
+                recordHistory(); 
+                saveState();
+                renderAll();
+            });
+        }
+
+        function selectPage(id) {
+            state.currentPageId = id;
+            saveState(); 
+            renderAll();
+            scrollToPage(id);
+        }
+
+        function scrollToPage(pageId) {
+            const el = document.getElementById(`view-page-${pageId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function switchMode(newMode) {
+            const hasImages = state.pages.some(p => p.images.length > 0);
+            if (state.mode === 'free' && newMode === 'auto' && hasImages) {
+                openModal('자동 정렬 모드 전환', '직접 배치한 레이아웃이 초기화되고 자동 정렬됩니다. 계속하시겠습니까?', () => {
+                    state.mode = 'auto';
+                    recordHistory(); 
+                    saveState();
+                    renderAll();
+                });
+            } else {
+                state.mode = newMode;
+                recordHistory(); 
+                saveState();
+                renderAll();
+            }
+        }
+
+        function setPaperSize(size) {
+            if (state.paperSize === size) return;
+            state.paperSize = size;
+            recordHistory();
+            saveState();
+            renderAll();
+        }
+
+        function toggleGrid() {
+            state.showGrid = !state.showGrid;
+            saveState();
+            renderAll();
+        }
+
+        function renderAll() {
+            const scrollArea = document.getElementById('workspace-scroll-area');
+            const scrollTop = scrollArea ? scrollArea.scrollTop : 0;
+
+            renderToolbar();
+            renderSidebar();
+            renderWorkspace();
+
+            if (scrollArea) scrollArea.scrollTop = scrollTop;
+        }
+
+        function renderToolbar() {
+            const modeContainerDesktop = document.getElementById('mode-toggle-desktop');
+            const modeContainerMobile = document.getElementById('mode-toggle-mobile');
+            const paperContainerDesktop = document.getElementById('paper-toggle-desktop');
+            const paperContainerMobile = document.getElementById('paper-toggle-mobile');
+            
+            const isAuto = state.mode === 'auto';
+            const isA4 = state.paperSize === 'a4';
+
+            // 용지 + 격자 토글 렌더링
+            const htmlPaperDesktop = `
+                <button onclick="setPaperSize('a4')" class="flex items-center justify-center px-3 sm:px-4 py-1.5 rounded-md text-sm font-bold transition-all ${isA4 ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}" title="A4 용지">
                     A4
                 </button>
-                <button onclick="setPaperSize('a5')" class="flex items-center justify-center px-3 sm:px-4 py-1.5 rounded-md text-sm font-bold transition-all ${!isA4 ? "bg-white shadow-sm text-indigo-600" : "text-gray-500 hover:text-gray-700"}" title="A5 용지">
+                <button onclick="setPaperSize('a5')" class="flex items-center justify-center px-3 sm:px-4 py-1.5 rounded-md text-sm font-bold transition-all ${!isA4 ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}" title="A5 용지 (가로형)">
                     A5
                 </button>
                 <div class="w-px h-4 bg-gray-300 mx-1 hidden sm:block"></div>
-                <button onclick="toggleGrid()" class="flex items-center justify-center p-1.5 rounded-md transition-all ${state.showGrid ? "bg-white shadow-sm text-indigo-600" : "text-gray-500 hover:text-gray-700"}" title="가이드선 (격자) 켜기/끄기">
+                <button onclick="toggleGrid()" class="flex items-center justify-center p-1.5 rounded-md transition-all ${state.showGrid ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}" title="가이드선 (격자) 켜기/끄기 (Alt키를 누르고 드래그하면 눈금에 자석처럼 붙습니다)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
                 </button>
             `;
 
-        const htmlPaperMobile = `
-                <button onclick="setPaperSize('a4')" class="flex items-center justify-center px-3 py-1.5 rounded-md text-sm font-bold transition-all ${isA4 ? "bg-white shadow-sm text-indigo-600" : "text-gray-500 hover:text-gray-700"}" title="A4 용지">
+            const htmlPaperMobile = `
+                <button onclick="setPaperSize('a4')" class="flex items-center justify-center px-3 py-1.5 rounded-md text-sm font-bold transition-all ${isA4 ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}" title="A4 용지">
                     A4
                 </button>
-                <button onclick="setPaperSize('a5')" class="flex items-center justify-center px-3 py-1.5 rounded-md text-sm font-bold transition-all ${!isA4 ? "bg-white shadow-sm text-indigo-600" : "text-gray-500 hover:text-gray-700"}" title="A5 용지">
+                <button onclick="setPaperSize('a5')" class="flex items-center justify-center px-3 py-1.5 rounded-md text-sm font-bold transition-all ${!isA4 ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}" title="A5 용지 (가로형)">
                     A5
                 </button>
                 <div class="w-px h-4 bg-gray-300 mx-1"></div>
-                <button onclick="toggleGrid()" class="flex items-center justify-center p-1.5 rounded-md transition-all ${state.showGrid ? "bg-white shadow-sm text-indigo-600" : "text-gray-500 hover:text-gray-700"}" title="격자 가이드">
+                <button onclick="toggleGrid()" class="flex items-center justify-center p-1.5 rounded-md transition-all ${state.showGrid ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'}" title="격자 가이드 (Alt+드래그로 눈금 맞춤)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
                 </button>
             `;
+            
+            if (paperContainerDesktop) paperContainerDesktop.innerHTML = htmlPaperDesktop;
+            if (paperContainerMobile) paperContainerMobile.innerHTML = htmlPaperMobile;
 
-        if (paperContainerDesktop)
-          paperContainerDesktop.innerHTML = htmlPaperDesktop;
-        if (paperContainerMobile)
-          paperContainerMobile.innerHTML = htmlPaperMobile;
-
-        // 레이아웃 토글 렌더링
-        const htmlModeDesktop = `
-                <button onclick="switchMode('auto')" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${isAuto ? "bg-white shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700"}">
+            // 레이아웃 토글 렌더링
+            const htmlModeDesktop = `
+                <button onclick="switchMode('auto')" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${isAuto ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> <span>자동 정렬</span>
                 </button>
-                <button onclick="switchMode('free')" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${!isAuto ? "bg-white shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700"}">
+                <button onclick="switchMode('free')" class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${!isAuto ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><circle cx="12" cy="12" r="4"/></svg> <span>자유 배치</span>
                 </button>
             `;
-        const htmlModeMobile = `
-                <button onclick="switchMode('auto')" class="flex items-center justify-center p-1.5 rounded-md transition-all ${isAuto ? "bg-white shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700"}" title="자동 정렬">
+            const htmlModeMobile = `
+                <button onclick="switchMode('auto')" class="flex items-center justify-center p-1.5 rounded-md transition-all ${isAuto ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}" title="자동 정렬">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
                 </button>
-                <button onclick="switchMode('free')" class="flex items-center justify-center p-1.5 rounded-md transition-all ${!isAuto ? "bg-white shadow-sm text-blue-600" : "text-gray-500 hover:text-gray-700"}" title="자유 배치">
+                <button onclick="switchMode('free')" class="flex items-center justify-center p-1.5 rounded-md transition-all ${!isAuto ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}" title="자유 배치">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><circle cx="12" cy="12" r="4"/></svg>
                 </button>
             `;
-
-        if (modeContainerDesktop)
-          modeContainerDesktop.innerHTML = htmlModeDesktop;
-        if (modeContainerMobile) modeContainerMobile.innerHTML = htmlModeMobile;
-      }
-
-      function renderSidebar() {
-        const drawer = document.getElementById("sidebar-drawer");
-        const iconSvg = document.getElementById("sidebar-icon-svg");
-
-        if (state.isSidebarOpen) {
-          drawer.classList.remove("-translate-x-full");
-          iconSvg.innerHTML = `<path d="m11 18-6-6 6-6"/><path d="m18 18-6-6 6-6"/>`; // <<
-        } else {
-          drawer.classList.add("-translate-x-full");
-          iconSvg.innerHTML = `<path d="m13 18 6-6-6-6"/><path d="m6 18 6-6-6-6"/>`; // >>
+            
+            if (modeContainerDesktop) modeContainerDesktop.innerHTML = htmlModeDesktop;
+            if (modeContainerMobile) modeContainerMobile.innerHTML = htmlModeMobile;
         }
 
-        document.getElementById("page-count-text").innerText =
-          `페이지 목록 (${state.pages.length})`;
-        const sidebar = document.getElementById("sidebar-list");
-        sidebar.innerHTML = "";
+        function renderSidebar() {
+            const drawer = document.getElementById('sidebar-drawer');
+            const iconSvg = document.getElementById('sidebar-icon-svg');
+            
+            if (state.isSidebarOpen) {
+                drawer.classList.remove('-translate-x-full');
+                iconSvg.innerHTML = `<path d="m11 18-6-6 6-6"/><path d="m18 18-6-6 6-6"/>`; // <<
+            } else {
+                drawer.classList.add('-translate-x-full');
+                iconSvg.innerHTML = `<path d="m13 18 6-6-6-6"/><path d="m6 18 6-6-6-6"/>`; // >>
+            }
 
-        state.pages.forEach((page, index) => {
-          const isActive = page.id === state.currentPageId;
-          const div = document.createElement("div");
-          div.className = `group relative flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-all ${isActive ? "border-blue-500 bg-blue-50/50 shadow-sm" : "border-transparent hover:border-gray-200 hover:bg-gray-50"}`;
-          div.onclick = () => selectPage(page.id);
+            document.getElementById('page-count-text').innerText = `페이지 목록 (${state.pages.length})`;
+            const sidebar = document.getElementById('sidebar-list');
+            sidebar.innerHTML = '';
 
-          div.innerHTML = `
+            state.pages.forEach((page, index) => {
+                const isActive = page.id === state.currentPageId;
+                const div = document.createElement('div');
+                div.className = `group relative flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-all ${isActive ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-transparent hover:border-gray-200 hover:bg-gray-50'}`;
+                div.onclick = () => selectPage(page.id);
+
+                div.innerHTML = `
                     <div class="flex items-center min-w-0 flex-1">
-                        <div class="w-8 h-10 rounded border flex items-center justify-center mr-3 shrink-0 ${isActive ? "bg-white border-blue-200 text-blue-600" : "bg-white border-gray-200 text-gray-400"}">
+                        <div class="w-8 h-10 rounded border flex items-center justify-center mr-3 shrink-0 ${isActive ? 'bg-white border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-400'}">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
                         </div>
                         <div class="flex-1 min-w-0 pr-2">
-                            <p class="text-sm font-medium truncate ${isActive ? "text-blue-700" : "text-gray-700"}">페이지 ${index + 1}</p>
+                            <p class="text-sm font-medium truncate ${isActive ? 'text-blue-700' : 'text-gray-700'}">페이지 ${index + 1}</p>
                             <p class="text-xs text-gray-500 mt-0.5">이미지 ${page.images.length}장</p>
                         </div>
                     </div>
-                    ${
-                      state.pages.length > 1
-                        ? `
+                    ${state.pages.length > 1 ? `
                         <div class="flex items-center bg-white/95 shadow-sm border border-gray-200 rounded px-1.5 py-1 z-10 shrink-0 ml-2">
                             ${index > 0 ? `<button onclick="movePageOrder('${page.id}', 'up', event)" class="p-1 text-gray-500 hover:text-blue-600 rounded transition-colors" title="위로 이동"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>` : `<div class="w-[22px]"></div>`}
                             ${index < state.pages.length - 1 ? `<button onclick="movePageOrder('${page.id}', 'down', event)" class="p-1 text-gray-500 hover:text-blue-600 rounded transition-colors" title="아래로 이동"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>` : `<div class="w-[22px]"></div>`}
                             <div class="w-px h-3 bg-gray-300 mx-1.5"></div>
                             <button onclick="deletePage('${page.id}', event)" class="p-1 text-gray-500 hover:text-red-500 rounded transition-colors" title="삭제"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                         </div>
-                    `
-                        : ""
-                    }
+                    ` : ''}
                 `;
-          sidebar.appendChild(div);
-        });
-      }
+                sidebar.appendChild(div);
+            });
+        }
 
-      function renderWorkspace() {
-        const wrapper = document.getElementById("workspace-pages-wrapper");
-        const pagination = document.getElementById("floating-pagination");
-        const pageIndex = state.pages.findIndex(
-          (p) => p.id === state.currentPageId,
-        );
-
-        if (state.pages.length > 1) {
-          pagination.style.display = "flex";
-          pagination.innerHTML = `
-                    <button onclick="changePage(-1)" class="p-1.5 text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors" ${pageIndex === 0 ? "disabled" : ""} title="이전 페이지">
+        function renderWorkspace() {
+            const wrapper = document.getElementById('workspace-pages-wrapper');
+            const pagination = document.getElementById('floating-pagination');
+            const pageIndex = state.pages.findIndex(p => p.id === state.currentPageId);
+            
+            if (state.pages.length > 1) {
+                pagination.style.display = 'flex';
+                pagination.innerHTML = `
+                    <button onclick="changePage(-1)" class="p-1.5 text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors" ${pageIndex === 0 ? 'disabled' : ''} title="이전 페이지">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                     </button>
                     <span class="text-sm font-bold text-gray-700 select-none min-w-[3rem] text-center">${pageIndex + 1} / ${state.pages.length}</span>
-                    <button onclick="changePage(1)" class="p-1.5 text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors" ${pageIndex === state.pages.length - 1 ? "disabled" : ""} title="다음 페이지">
+                    <button onclick="changePage(1)" class="p-1.5 text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors" ${pageIndex === state.pages.length - 1 ? 'disabled' : ''} title="다음 페이지">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                     </button>
                 `;
-        } else {
-          pagination.style.display = "none";
-        }
+            } else {
+                pagination.style.display = 'none';
+            }
 
-        wrapper.innerHTML = "";
+            wrapper.innerHTML = '';
 
-        const paperClass = state.paperSize === "a4" ? "paper-a4" : "paper-a5";
-        const layoutClass =
-          state.mode === "auto"
-            ? state.paperSize === "a4"
-              ? "layout-auto-a4"
-              : "layout-auto-a5"
-            : "";
-        // 자유 배치 모드이면서 격자가 켜져 있으면 배경 클래스 추가
-        const gridClass =
-          state.showGrid && state.mode === "free" ? "grid-bg" : "bg-white";
+            const paperClass = state.paperSize === 'a4' ? 'paper-a4' : 'paper-a5';
+            const layoutClass = state.mode === 'auto' ? (state.paperSize === 'a4' ? 'layout-auto-a4' : 'layout-auto-a5') : '';
+            // 자유 배치 모드이면서 격자가 켜져 있으면 배경 클래스 추가
+            const gridClass = (state.showGrid && state.mode === 'free') ? 'grid-bg' : 'bg-white';
 
-        state.pages.forEach((page, index) => {
-          const isActive = page.id === state.currentPageId;
+            state.pages.forEach((page, index) => {
+                const isActive = page.id === state.currentPageId;
+                
+                // 페이지 블록 전체를 감싸는 래퍼 생성
+                const pageBlock = document.createElement('div');
+                pageBlock.className = 'flex flex-col items-center w-full max-w-[794px] mb-4';
 
-          // 페이지 블록 전체를 감싸는 래퍼 생성
-          const pageBlock = document.createElement("div");
-          pageBlock.className =
-            "flex flex-col items-center w-full max-w-[794px] mb-4";
-
-          // 상단 컨트롤 바 (페이지 번호 + 위/아래 이동)
-          const pageHeader = document.createElement("div");
-          pageHeader.className =
-            "flex items-center justify-between w-full px-2 mb-2 hide-on-export";
-          pageHeader.innerHTML = `
+                // 상단 컨트롤 바 (페이지 번호 + 위/아래 이동)
+                const pageHeader = document.createElement('div');
+                pageHeader.className = 'flex items-center justify-between w-full px-2 mb-2 hide-on-export';
+                pageHeader.innerHTML = `
                     <div class="text-sm font-bold text-gray-500 bg-white/80 px-3 py-1 rounded-full shadow-sm border border-gray-200 backdrop-blur-sm">
                         ${index + 1} 페이지
                     </div>
-                    ${
-                      state.pages.length > 1
-                        ? `
+                    ${state.pages.length > 1 ? `
                     <div class="flex items-center bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg shadow-sm p-1 gap-1">
-                        <button onclick="movePageOrder('${page.id}', 'up', event)" class="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500" ${index === 0 ? "disabled" : ""} title="위로 이동">
+                        <button onclick="movePageOrder('${page.id}', 'up', event)" class="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500" ${index === 0 ? 'disabled' : ''} title="위로 이동">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
                         </button>
                         <div class="w-px h-4 bg-gray-300"></div>
-                        <button onclick="movePageOrder('${page.id}', 'down', event)" class="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500" ${index === state.pages.length - 1 ? "disabled" : ""} title="아래로 이동">
+                        <button onclick="movePageOrder('${page.id}', 'down', event)" class="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500" ${index === state.pages.length - 1 ? 'disabled' : ''} title="아래로 이동">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                         </button>
                     </div>
-                    `
-                        : "<div></div>"
-                    }
+                    ` : '<div></div>'}
                 `;
-          pageBlock.appendChild(pageHeader);
+                pageBlock.appendChild(pageHeader);
 
-          // 기존 캔버스 컨테이너
-          const pageContainer = document.createElement("div");
-          pageContainer.id = `view-page-${page.id}`;
+                // 기존 캔버스 컨테이너 (여기에 overflow-hidden을 주어 바깥으로 튀어나가는 것을 막음)
+                const pageContainer = document.createElement('div');
+                pageContainer.id = `view-page-${page.id}`;
+                
+                pageContainer.className = `receipt-canvas ${paperClass} shadow-xl rounded-sm overflow-hidden transition-all duration-300 shrink-0 relative ${isActive ? 'ring-4 ring-blue-500/50' : 'ring-1 ring-gray-300 opacity-95 hover:opacity-100 cursor-pointer'} ${layoutClass} ${gridClass}`;
+                
+                if (!isActive) {
+                    pageContainer.onclick = () => selectPage(page.id);
+                }
 
-          pageContainer.className = `receipt-canvas ${paperClass} shadow-xl rounded-sm transition-all duration-300 shrink-0 relative ${isActive ? "ring-4 ring-blue-500/50" : "ring-1 ring-gray-300 opacity-95 hover:opacity-100 cursor-pointer"} ${layoutClass} ${gridClass}`;
+                if (!isActive) {
+                    const label = document.createElement('div');
+                    label.className = "absolute top-2 right-2 bg-gray-800/60 text-white text-xs px-2 py-1 rounded shadow-sm pointer-events-none z-30";
+                    label.innerText = `클릭하여 ${index + 1}페이지 선택`;
+                    pageContainer.appendChild(label);
+                }
 
-          if (!isActive) {
-            pageContainer.onclick = () => selectPage(page.id);
-          }
-
-          if (!isActive) {
-            const label = document.createElement("div");
-            label.className =
-              "absolute top-2 right-2 bg-gray-800/60 text-white text-xs px-2 py-1 rounded shadow-sm pointer-events-none z-30";
-            label.innerText = `클릭하여 ${index + 1}페이지 선택`;
-            pageContainer.appendChild(label);
-          }
-
-          if (page.images.length === 0) {
-            const emptyDiv = document.createElement("div");
-            emptyDiv.className =
-              "absolute inset-0 flex flex-col items-center justify-center text-gray-400 pointer-events-none";
-            emptyDiv.innerHTML = `
+                if (page.images.length === 0) {
+                    const emptyDiv = document.createElement('div');
+                    emptyDiv.className = "absolute inset-0 flex flex-col items-center justify-center text-gray-400 pointer-events-none";
+                    emptyDiv.innerHTML = `
                         <div class="w-24 h-24 mb-4 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center bg-gray-50/50">
                             <span class="text-3xl">📋</span>
                         </div>
                         <p class="text-lg font-medium text-gray-600 mb-2">${index + 1}번 페이지가 비어 있습니다.</p>
-                        ${isActive ? '<p class="text-sm">화면을 클릭하고 <kbd class="px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm text-gray-700 font-mono text-xs">Ctrl</kbd> + <kbd class="px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm text-gray-700 font-mono text-xs">V</kbd> 를 누르세요</p>' : ""}
+                        ${isActive ? '<p class="text-sm">화면을 클릭하고 <kbd class="px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm text-gray-700 font-mono text-xs">Ctrl</kbd> + <kbd class="px-2 py-1 bg-white border border-gray-200 rounded-md shadow-sm text-gray-700 font-mono text-xs">V</kbd> 를 누르세요</p>' : ''}
                     `;
-            pageContainer.appendChild(emptyDiv);
-          } else {
-            page.images.forEach((img) => {
-              const wrapperDiv = document.createElement("div");
-              const taxBadgeHTML = img.isTaxDeductible
-                ? `
+                    pageContainer.appendChild(emptyDiv);
+                } else {
+                    page.images.forEach(img => {
+                        const wrapperDiv = document.createElement('div');
+                        const taxBadgeHTML = img.isTaxDeductible ? `
                             <div class="absolute top-3 left-3 w-8 h-8 bg-blue-600 text-white rounded-full shadow-md border-[3px] border-white z-10 flex items-center justify-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                             </div>
-                        `
-                : "";
-
-              if (state.mode === "auto") {
-                wrapperDiv.className =
-                  "relative group rounded-md overflow-hidden bg-white flex items-center justify-center border border-gray-200 shadow-sm border-on-free";
-                wrapperDiv.innerHTML = `
+                        ` : '';
+                        
+                        if (state.mode === 'auto') {
+                            wrapperDiv.className = 'relative group rounded-md overflow-hidden bg-white flex items-center justify-center border border-gray-200 shadow-sm border-on-free';
+                            wrapperDiv.innerHTML = `
                                 ${taxBadgeHTML}
                                 <img src="${img.src}" class="max-w-full max-h-[500px] object-contain select-none pointer-events-none" draggable="false">
                                 <button onclick="removeImage('${img.id}', event)" class="hide-on-export absolute top-2 right-2 p-1.5 bg-white/90 text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-20">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                                 </button>
                                 <div class="hide-on-export absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-gray-800/80 backdrop-blur-md border border-gray-700 rounded-full p-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-20" onclick="event.stopPropagation()">
-                                    ${
-                                      index > 0
-                                        ? `
+                                    ${index > 0 ? `
                                     <button onclick="moveImgToPage('${img.id}', -1, event)" class="p-1.5 text-gray-400 hover:text-white transition-colors" title="이전 페이지로 영수증 이동"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg></button>
                                     <div class="w-px h-4 bg-gray-600 mx-0.5"></div>
-                                    `
-                                        : ""
-                                    }
+                                    ` : ''}
 
                                     <button onclick="moveImage('${img.id}', 'left', event)" class="p-1.5 text-white hover:text-blue-300 hover:bg-gray-700 rounded-full transition-colors" title="이전으로"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
                                     <button onclick="moveImage('${img.id}', 'up', event)" class="p-1.5 text-white hover:text-blue-300 hover:bg-gray-700 rounded-full transition-colors" title="위로"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>
@@ -1389,77 +797,59 @@
                                     <button onclick="moveImage('${img.id}', 'right', event)" class="p-1.5 text-white hover:text-blue-300 hover:bg-gray-700 rounded-full transition-colors" title="다음으로"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
                                     
                                     <div class="w-px h-4 bg-gray-600 mx-0.5"></div>
-                                    <button onclick="toggleTax('${img.id}', event)" class="p-1.5 ${img.isTaxDeductible ? "text-blue-400 bg-blue-900/50" : "text-gray-400 hover:text-white"} rounded-full transition-colors" title="공제 대상 V표시"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                                    <button onclick="toggleTax('${img.id}', event)" class="p-1.5 ${img.isTaxDeductible ? 'text-blue-400 bg-blue-900/50' : 'text-gray-400 hover:text-white'} rounded-full transition-colors" title="공제 대상 V표시"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
 
-                                    ${
-                                      index < state.pages.length - 1
-                                        ? `
+                                    ${index < state.pages.length - 1 ? `
                                     <div class="w-px h-4 bg-gray-600 mx-0.5"></div>
                                     <button onclick="moveImgToPage('${img.id}', 1, event)" class="p-1.5 text-gray-400 hover:text-white transition-colors" title="다음 페이지로 영수증 이동"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 17 5-5-5-5"/><path d="m6 17 5-5-5-5"/></svg></button>
-                                    `
-                                        : ""
-                                    }
+                                    ` : ''}
                                 </div>
                             `;
-              } else {
-                wrapperDiv.className = "absolute group cursor-grab";
-                wrapperDiv.style.left = `${img.x}px`;
-                wrapperDiv.style.top = `${img.y}px`;
-                wrapperDiv.style.width = `${img.width}px`;
-                wrapperDiv.style.zIndex = img.zIndex;
+                        } else {
+                            wrapperDiv.className = 'absolute group cursor-grab';
+                            wrapperDiv.style.left = `${img.x}px`;
+                            wrapperDiv.style.top = `${img.y}px`;
+                            wrapperDiv.style.width = `${img.width}px`;
+                            wrapperDiv.style.zIndex = img.zIndex;
 
-                wrapperDiv.innerHTML = `
+                            wrapperDiv.innerHTML = `
                                 <div class="relative border-2 border-transparent group-hover:border-blue-300 transition-colors border-on-free w-full h-full inner-border">
                                     ${taxBadgeHTML}
                                     <img src="${img.src}" class="w-full h-auto block select-none pointer-events-none bg-white" draggable="false">
                                     <button onclick="removeImage('${img.id}', event)" class="hide-on-export absolute -top-3 -right-3 p-1.5 bg-white border border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-all z-20"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
 
                                     <div class="hide-on-export absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-gray-800/80 backdrop-blur-md border border-gray-700 rounded-full p-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-20 cursor-default" onmousedown="event.stopPropagation()">
-                                        ${
-                                          index > 0
-                                            ? `
+                                        ${index > 0 ? `
                                         <button onclick="moveImgToPage('${img.id}', -1, event)" class="p-1.5 text-gray-400 hover:text-white transition-colors" title="이전 페이지로 영수증 이동"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg></button>
                                         <div class="w-px h-3 bg-gray-600 mx-0.5"></div>
-                                        `
-                                            : ""
-                                        }
+                                        ` : ''}
 
-                                        <button onclick="toggleTax('${img.id}', event)" class="p-1.5 ${img.isTaxDeductible ? "text-blue-400 bg-blue-900/50" : "text-gray-400 hover:text-white"} rounded-full transition-colors" title="공제 대상 V표시"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                                        <button onclick="toggleTax('${img.id}', event)" class="p-1.5 ${img.isTaxDeductible ? 'text-blue-400 bg-blue-900/50' : 'text-gray-400 hover:text-white'} rounded-full transition-colors" title="공제 대상 V표시"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
 
-                                        ${
-                                          index < state.pages.length - 1
-                                            ? `
+                                        ${index < state.pages.length - 1 ? `
                                         <div class="w-px h-3 bg-gray-600 mx-0.5"></div>
                                         <button onclick="moveImgToPage('${img.id}', 1, event)" class="p-1.5 text-gray-400 hover:text-white transition-colors" title="다음 페이지로 영수증 이동"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 17 5-5-5-5"/><path d="m6 17 5-5-5-5"/></svg></button>
-                                        `
-                                            : ""
-                                        }
+                                        ` : ''}
                                     </div>
 
                                     <div class="hide-on-export resize-handle absolute -bottom-2 -right-2 w-6 h-6 bg-white border border-gray-300 rounded-full shadow-md flex items-center justify-center text-gray-500 cursor-nwse-resize opacity-0 group-hover:opacity-100 hover:bg-blue-50 hover:text-blue-600 transition-all z-20"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg></div>
                                 </div>
                             `;
 
-                wrapperDiv.addEventListener("mousedown", (e) =>
-                  startDrag(e, img, wrapperDiv),
-                );
-                const resizeHandle = wrapperDiv.querySelector(".resize-handle");
-                if (resizeHandle)
-                  resizeHandle.addEventListener("mousedown", (e) =>
-                    startResize(e, img, wrapperDiv),
-                  );
-              }
-              pageContainer.appendChild(wrapperDiv);
-            });
-          }
+                            wrapperDiv.addEventListener('mousedown', (e) => startDrag(e, img, wrapperDiv));
+                            const resizeHandle = wrapperDiv.querySelector('.resize-handle');
+                            if(resizeHandle) resizeHandle.addEventListener('mousedown', (e) => startResize(e, img, wrapperDiv));
+                        }
+                        pageContainer.appendChild(wrapperDiv);
+                    });
+                }
+                
+                pageBlock.appendChild(pageContainer);
 
-          pageBlock.appendChild(pageContainer);
-
-          // 페이지 사이 구분선 및 추가(+) 버튼
-          const separator = document.createElement("div");
-          separator.className =
-            "w-full flex justify-center mt-8 mb-4 relative hide-on-export";
-          separator.innerHTML = `
+                // 페이지 사이 구분선 및 추가(+) 버튼
+                const separator = document.createElement('div');
+                separator.className = 'w-full flex justify-center mt-8 mb-4 relative hide-on-export';
+                separator.innerHTML = `
                     <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div class="w-[120%] border-t-2 border-gray-300 border-dashed opacity-60"></div>
                     </div>
@@ -1467,599 +857,549 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                     </button>
                 `;
-          pageBlock.appendChild(separator);
+                pageBlock.appendChild(separator);
 
-          wrapper.appendChild(pageBlock);
-        });
-      }
-
-      function bringToFront(imgObj) {
-        state.maxZIndex++;
-        imgObj.zIndex = state.maxZIndex;
-      }
-
-      function startDrag(e, imgObj, el) {
-        if (e.target.closest("button") || e.target.closest(".resize-handle"))
-          return;
-        e.preventDefault();
-        bringToFront(imgObj);
-
-        el.classList.add("cursor-grabbing");
-        el.classList.remove("cursor-grab");
-        el.querySelector(".inner-border").classList.add("border-blue-500");
-
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const initialX = imgObj.x;
-        const initialY = imgObj.y;
-
-        function onMouseMove(mEvt) {
-          imgObj.x = initialX + (mEvt.clientX - startX);
-          imgObj.y = initialY + (mEvt.clientY - startY);
-          el.style.left = `${imgObj.x}px`;
-          el.style.top = `${imgObj.y}px`;
-          el.style.zIndex = imgObj.zIndex;
+                wrapper.appendChild(pageBlock);
+            });
         }
 
-        function onMouseUp() {
-          el.classList.remove("cursor-grabbing");
-          el.classList.add("cursor-grab");
-          el.querySelector(".inner-border").classList.remove("border-blue-500");
-
-          document.removeEventListener("mousemove", onMouseMove);
-          document.removeEventListener("mouseup", onMouseUp);
-          recordHistory();
-          saveState();
+        function bringToFront(imgObj) {
+            state.maxZIndex++;
+            imgObj.zIndex = state.maxZIndex;
         }
 
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp);
-      }
+        function startDrag(e, imgObj, el) {
+            if(e.target.closest('button') || e.target.closest('.resize-handle')) return; 
+            e.preventDefault();
+            bringToFront(imgObj);
+            
+            el.classList.add('cursor-grabbing');
+            el.classList.remove('cursor-grab');
+            el.querySelector('.inner-border').classList.add('border-blue-500');
 
-      function startResize(e, imgObj, el) {
-        e.preventDefault();
-        e.stopPropagation();
-        bringToFront(imgObj);
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const initialX = imgObj.x;
+            const initialY = imgObj.y;
 
-        el.querySelector(".inner-border").classList.add("border-blue-500");
+            function onMouseMove(mEvt) {
+                let newX = initialX + (mEvt.clientX - startX);
+                let newY = initialY + (mEvt.clientY - startY);
+                
+                // Alt 키를 누르면 20px 단위 격자 스냅 적용
+                if (mEvt.altKey) {
+                    newX = Math.round(newX / 20) * 20;
+                    newY = Math.round(newY / 20) * 20;
+                }
 
-        const startX = e.clientX;
-        const initialWidth = el.offsetWidth;
-
-        function onMouseMove(mEvt) {
-          const newWidth = Math.max(
-            100,
-            initialWidth + (mEvt.clientX - startX),
-          );
-          imgObj.width = newWidth;
-          el.style.width = `${imgObj.width}px`;
-        }
-
-        function onMouseUp() {
-          el.querySelector(".inner-border").classList.remove("border-blue-500");
-          document.removeEventListener("mousemove", onMouseMove);
-          document.removeEventListener("mouseup", onMouseUp);
-          recordHistory();
-          saveState();
-        }
-
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp);
-      }
-
-      function removeImage(imgId, e) {
-        if (e) e.stopPropagation();
-        const found = findImageAndPage(imgId);
-        if (found) {
-          found.page.images = found.page.images.filter(
-            (img) => img.id !== imgId,
-          );
-          recordHistory();
-          saveState();
-          renderAll();
-        }
-      }
-
-      function moveImage(imgId, direction, e) {
-        if (e) e.stopPropagation();
-        const found = findImageAndPage(imgId);
-        if (!found) return;
-
-        const page = found.page;
-        const idx = page.images.findIndex((img) => img.id === imgId);
-
-        let newIdx = idx;
-        if (direction === "left") newIdx = idx - 1;
-        if (direction === "right") newIdx = idx + 1;
-        if (direction === "up") newIdx = idx - 2;
-        if (direction === "down") newIdx = idx + 2;
-
-        if (newIdx < 0 || newIdx >= page.images.length) return;
-
-        const temp = page.images[idx];
-        page.images[idx] = page.images[newIdx];
-        page.images[newIdx] = temp;
-
-        recordHistory();
-        saveState();
-        renderAll();
-      }
-
-      function toggleTax(imgId, e) {
-        if (e) e.stopPropagation();
-        const found = findImageAndPage(imgId);
-        if (found) {
-          found.img.isTaxDeductible = !found.img.isTaxDeductible;
-          recordHistory();
-          saveState();
-          renderAll();
-        }
-      }
-
-      function moveImgToPage(imgId, offset, e) {
-        if (e) e.stopPropagation();
-        const found = findImageAndPage(imgId);
-        if (!found) return;
-
-        const pageIdx = state.pages.findIndex((p) => p.id === found.page.id);
-        const targetIdx = pageIdx + offset;
-
-        if (targetIdx >= 0 && targetIdx < state.pages.length) {
-          const imgIdx = state.pages[pageIdx].images.findIndex(
-            (i) => i.id === imgId,
-          );
-          const img = state.pages[pageIdx].images.splice(imgIdx, 1)[0];
-          state.pages[targetIdx].images.push(img);
-
-          state.currentPageId = state.pages[targetIdx].id;
-          recordHistory();
-          saveState();
-          renderAll();
-          scrollToPage(state.currentPageId);
-        }
-      }
-
-      function changePage(offset) {
-        const pageIdx = state.pages.findIndex(
-          (p) => p.id === state.currentPageId,
-        );
-        const targetIdx = pageIdx + offset;
-        if (targetIdx >= 0 && targetIdx < state.pages.length) {
-          state.currentPageId = state.pages[targetIdx].id;
-          saveState();
-          renderAll();
-          scrollToPage(state.currentPageId);
-        }
-      }
-
-      function movePageOrder(pageId, direction, event) {
-        event.stopPropagation();
-        const idx = state.pages.findIndex((p) => p.id === pageId);
-        if (idx === -1) return;
-
-        let newIdx = idx;
-        if (direction === "up") newIdx = idx - 1;
-        if (direction === "down") newIdx = idx + 1;
-
-        if (newIdx < 0 || newIdx >= state.pages.length) return;
-
-        const temp = state.pages[idx];
-        state.pages[idx] = state.pages[newIdx];
-        state.pages[newIdx] = temp;
-
-        recordHistory();
-        saveState();
-        renderAll();
-      }
-
-      function openModal(title, desc, confirmCallback) {
-        document.getElementById("modal-title").innerText = title;
-        document.getElementById("modal-desc").innerText = desc;
-        const modal = document.getElementById("custom-modal");
-        const confirmBtn = document.getElementById("modal-confirm-btn");
-
-        modal.classList.remove("hidden");
-
-        const newBtn = confirmBtn.cloneNode(true);
-        confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-
-        newBtn.addEventListener("click", () => {
-          confirmCallback();
-          closeModal();
-        });
-      }
-
-      function closeModal() {
-        document.getElementById("custom-modal").classList.add("hidden");
-      }
-
-      function closeCopyLayoutModal() {
-        document.getElementById("copy-layout-modal").classList.add("hidden");
-      }
-
-      function showLoading(title, text) {
-        document.getElementById("loading-title").innerText = title;
-        document.getElementById("loading-text").innerText = text;
-        document.getElementById("loading-overlay").classList.remove("hidden");
-      }
-
-      function hideLoading() {
-        document.getElementById("loading-overlay").classList.add("hidden");
-      }
-
-      function setExportingState(isExporting) {
-        state.isExporting = isExporting;
-
-        [
-          "btn-export-pdf",
-          "btn-export-img",
-          "btn-copy-page",
-          "btn-copy-all",
-        ].forEach((className) => {
-          document.querySelectorAll("." + className).forEach((btn) => {
-            btn.disabled = isExporting;
-            if (isExporting) {
-              btn.classList.add("opacity-50", "cursor-not-allowed");
-              btn.innerHTML = ICONS.spinner;
-            } else {
-              btn.classList.remove("opacity-50", "cursor-not-allowed");
-              if (className === "btn-export-pdf") btn.innerHTML = ICONS.pdf;
-              if (className === "btn-export-img") btn.innerHTML = ICONS.img;
-              if (className === "btn-copy-page") btn.innerHTML = ICONS.copy;
-              if (className === "btn-copy-all") btn.innerHTML = ICONS.copy;
+                imgObj.x = newX;
+                imgObj.y = newY;
+                el.style.left = `${imgObj.x}px`;
+                el.style.top = `${imgObj.y}px`;
+                el.style.zIndex = imgObj.zIndex;
             }
-          });
-        });
-      }
 
-      async function buildHiddenRenderArea() {
-        const container = document.getElementById("hidden-render-area");
-        container.innerHTML = "";
+            function onMouseUp() {
+                el.classList.remove('cursor-grabbing');
+                el.classList.add('cursor-grab');
+                el.querySelector('.inner-border').classList.remove('border-blue-500');
+                
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                recordHistory(); 
+                saveState();
+            }
 
-        const paperClass = state.paperSize === "a4" ? "paper-a4" : "paper-a5";
-        const layoutClass =
-          state.mode === "auto"
-            ? state.paperSize === "a4"
-              ? "layout-auto-a4"
-              : "layout-auto-a5"
-            : "";
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
 
-        state.pages.forEach((page, index) => {
-          if (page.images.length === 0 && state.pages.length > 1) return;
+        function startResize(e, imgObj, el) {
+            e.preventDefault();
+            e.stopPropagation();
+            bringToFront(imgObj);
 
-          const pageDiv = document.createElement("div");
-          pageDiv.id = `export-page-${index}`;
-          // 수출 시에는 격자(grid-bg)가 들어가지 않도록 bg-white 고정
-          pageDiv.className = `receipt-canvas bg-white ${paperClass} exporting ${layoutClass}`;
+            el.querySelector('.inner-border').classList.add('border-blue-500');
 
-          page.images.forEach((img) => {
-            const wrapper = document.createElement("div");
-            const taxBadgeHTML = img.isTaxDeductible
-              ? `
+            const startX = e.clientX;
+            const initialWidth = el.offsetWidth;
+
+            function onMouseMove(mEvt) {
+                let newWidth = initialWidth + (mEvt.clientX - startX);
+                
+                // Alt 키를 누르면 20px 단위 너비 스냅 적용
+                if (mEvt.altKey) {
+                    newWidth = Math.round(newWidth / 20) * 20;
+                }
+
+                imgObj.width = Math.max(100, newWidth);
+                el.style.width = `${imgObj.width}px`;
+            }
+
+            function onMouseUp() {
+                el.querySelector('.inner-border').classList.remove('border-blue-500');
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                recordHistory(); 
+                saveState();
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        function removeImage(imgId, e) {
+            if(e) e.stopPropagation();
+            const found = findImageAndPage(imgId);
+            if (found) {
+                found.page.images = found.page.images.filter(img => img.id !== imgId);
+                recordHistory(); 
+                saveState();
+                renderAll();
+            }
+        }
+
+        function moveImage(imgId, direction, e) {
+            if(e) e.stopPropagation();
+            const found = findImageAndPage(imgId);
+            if (!found) return;
+
+            const page = found.page;
+            const idx = page.images.findIndex(img => img.id === imgId);
+            
+            let newIdx = idx;
+            if (direction === 'left') newIdx = idx - 1;
+            if (direction === 'right') newIdx = idx + 1;
+            if (direction === 'up') newIdx = idx - 2; 
+            if (direction === 'down') newIdx = idx + 2; 
+
+            if (newIdx < 0 || newIdx >= page.images.length) return;
+
+            const temp = page.images[idx];
+            page.images[idx] = page.images[newIdx];
+            page.images[newIdx] = temp;
+
+            recordHistory(); 
+            saveState();
+            renderAll();
+        }
+
+        function toggleTax(imgId, e) {
+            if(e) e.stopPropagation();
+            const found = findImageAndPage(imgId);
+            if (found) {
+                found.img.isTaxDeductible = !found.img.isTaxDeductible;
+                recordHistory(); 
+                saveState();
+                renderAll();
+            }
+        }
+
+        function moveImgToPage(imgId, offset, e) {
+            if(e) e.stopPropagation();
+            const found = findImageAndPage(imgId);
+            if (!found) return;
+
+            const pageIdx = state.pages.findIndex(p => p.id === found.page.id);
+            const targetIdx = pageIdx + offset;
+            
+            if (targetIdx >= 0 && targetIdx < state.pages.length) {
+                const imgIdx = state.pages[pageIdx].images.findIndex(i => i.id === imgId);
+                const img = state.pages[pageIdx].images.splice(imgIdx, 1)[0];
+                
+                // [버그 수정] 다른 페이지로 이동 시, 안전한 좌표(좌측 상단)로 초기화하여 도화지 바깥으로 날아가는 현상 방지
+                if (state.mode === 'free') {
+                    const targetImgCount = state.pages[targetIdx].images.length;
+                    const posOffset = (targetImgCount * 20) % 200;
+                    img.x = 100 + posOffset;
+                    img.y = 100 + posOffset;
+                }
+
+                state.pages[targetIdx].images.push(img);
+                
+                state.currentPageId = state.pages[targetIdx].id;
+                recordHistory(); 
+                saveState();
+                renderAll();
+                scrollToPage(state.currentPageId);
+            }
+        }
+
+        function changePage(offset) {
+            const pageIdx = state.pages.findIndex(p => p.id === state.currentPageId);
+            const targetIdx = pageIdx + offset;
+            if (targetIdx >= 0 && targetIdx < state.pages.length) {
+                state.currentPageId = state.pages[targetIdx].id;
+                saveState(); 
+                renderAll();
+                scrollToPage(state.currentPageId);
+            }
+        }
+
+        function movePageOrder(pageId, direction, event) {
+            event.stopPropagation();
+            const idx = state.pages.findIndex(p => p.id === pageId);
+            if (idx === -1) return;
+
+            let newIdx = idx;
+            if (direction === 'up') newIdx = idx - 1;
+            if (direction === 'down') newIdx = idx + 1;
+
+            if (newIdx < 0 || newIdx >= state.pages.length) return;
+
+            const temp = state.pages[idx];
+            state.pages[idx] = state.pages[newIdx];
+            state.pages[newIdx] = temp;
+
+            recordHistory(); 
+            saveState();
+            renderAll();
+        }
+
+        function openModal(title, desc, confirmCallback) {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-desc').innerText = desc;
+            const modal = document.getElementById('custom-modal');
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            
+            modal.classList.remove('hidden');
+            
+            const newBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+            
+            newBtn.addEventListener('click', () => {
+                confirmCallback();
+                closeModal();
+            });
+        }
+
+        function closeModal() {
+            document.getElementById('custom-modal').classList.add('hidden');
+        }
+
+        function closeCopyLayoutModal() {
+            document.getElementById('copy-layout-modal').classList.add('hidden');
+        }
+
+        function showLoading(title, text) {
+            document.getElementById('loading-title').innerText = title;
+            document.getElementById('loading-text').innerText = text;
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        function setExportingState(isExporting) {
+            state.isExporting = isExporting;
+            
+            ['btn-export-pdf', 'btn-export-img', 'btn-copy-page', 'btn-copy-all'].forEach(className => {
+                document.querySelectorAll('.' + className).forEach(btn => {
+                    btn.disabled = isExporting;
+                    if (isExporting) {
+                        btn.classList.add('opacity-50', 'cursor-not-allowed');
+                        btn.innerHTML = ICONS.spinner;
+                    } else {
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        if (className === 'btn-export-pdf') btn.innerHTML = ICONS.pdf;
+                        if (className === 'btn-export-img') btn.innerHTML = ICONS.img;
+                        if (className === 'btn-copy-page') btn.innerHTML = ICONS.copy;
+                        if (className === 'btn-copy-all') btn.innerHTML = ICONS.copy;
+                    }
+                });
+            });
+        }
+
+        async function buildHiddenRenderArea() {
+            const container = document.getElementById('hidden-render-area');
+            container.innerHTML = '';
+            
+            const paperClass = state.paperSize === 'a4' ? 'paper-a4' : 'paper-a5';
+            const layoutClass = state.mode === 'auto' ? (state.paperSize === 'a4' ? 'layout-auto-a4' : 'layout-auto-a5') : '';
+
+            state.pages.forEach((page, index) => {
+                if (page.images.length === 0 && state.pages.length > 1) return; 
+
+                const pageDiv = document.createElement('div');
+                pageDiv.id = `export-page-${index}`;
+                // 수출 시에는 격자(grid-bg)가 들어가지 않도록 bg-white 고정, overflow-hidden 적용
+                pageDiv.className = `receipt-canvas overflow-hidden bg-white ${paperClass} exporting ${layoutClass}`;
+                
+                page.images.forEach(img => {
+                    const wrapper = document.createElement('div');
+                    const taxBadgeHTML = img.isTaxDeductible ? `
                         <div class="absolute top-3 left-3 w-8 h-8 bg-blue-600 text-white rounded-full shadow-md border-[3px] border-white z-10 flex items-center justify-center">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                         </div>
-                    `
-              : "";
+                    ` : '';
 
-            if (state.mode === "auto") {
-              wrapper.className = "relative flex items-center justify-center";
-              wrapper.innerHTML = `
+                    if (state.mode === 'auto') {
+                        wrapper.className = 'relative flex items-center justify-center';
+                        wrapper.innerHTML = `
                             ${taxBadgeHTML}
                             <img src="${img.src}" class="max-w-full max-h-[500px] object-contain">
                         `;
-            } else {
-              wrapper.className = "absolute";
-              wrapper.style.left = `${img.x}px`;
-              wrapper.style.top = `${img.y}px`;
-              wrapper.style.width = `${img.width}px`;
-              wrapper.style.zIndex = img.zIndex;
-              wrapper.innerHTML = `
+                    } else {
+                        wrapper.className = 'absolute';
+                        wrapper.style.left = `${img.x}px`;
+                        wrapper.style.top = `${img.y}px`;
+                        wrapper.style.width = `${img.width}px`;
+                        wrapper.style.zIndex = img.zIndex;
+                        wrapper.innerHTML = `
                             ${taxBadgeHTML}
                             <img src="${img.src}" class="w-full h-auto block bg-white">
                         `;
-            }
-            pageDiv.appendChild(wrapper);
-          });
-          container.appendChild(pageDiv);
-        });
+                    }
+                    pageDiv.appendChild(wrapper);
+                });
+                container.appendChild(pageDiv);
+            });
 
-        await new Promise((r) => setTimeout(r, 100));
-      }
-
-      async function copyCurrentPage() {
-        const pageIndex = state.pages.findIndex(
-          (p) => p.id === state.currentPageId,
-        );
-        if (pageIndex === -1 || state.pages[pageIndex].images.length === 0) {
-          return alert("복사할 이미지가 없습니다.");
+            await new Promise(r => setTimeout(r, 100));
         }
 
-        setExportingState(true);
+        async function copyCurrentPage() {
+            const pageIndex = state.pages.findIndex(p => p.id === state.currentPageId);
+            if (pageIndex === -1 || state.pages[pageIndex].images.length === 0) {
+                return alert("복사할 이미지가 없습니다.");
+            }
 
-        try {
-          await buildHiddenRenderArea();
+            setExportingState(true);
 
-          const targetNode = document.getElementById(
-            `export-page-${pageIndex}`,
-          );
-          if (!targetNode) throw new Error("렌더링 요소를 찾을 수 없습니다.");
-
-          const canvas = await html2canvas(targetNode, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-          });
-
-          canvas.toBlob(async function (blob) {
             try {
-              const item = new ClipboardItem({ "image/png": blob });
-              await navigator.clipboard.write([item]);
-              alert(
-                "현재 페이지가 클립보드에 복사되었습니다!\n워드나 카카오톡 등 원하는 곳에 Ctrl+V로 붙여넣으세요.",
-              );
-            } catch (clipboardErr) {
-              console.error("Clipboard API failed", clipboardErr);
-              alert(
-                "클립보드 복사를 지원하지 않는 환경입니다. 우측의 [PNG 저장]을 이용해주세요.",
-              );
-            } finally {
-              setExportingState(false);
+                await buildHiddenRenderArea();
+                
+                const targetNode = document.getElementById(`export-page-${pageIndex}`);
+                if(!targetNode) throw new Error("렌더링 요소를 찾을 수 없습니다.");
+
+                const canvas = await html2canvas(targetNode, {
+                    scale: 2, 
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: '#ffffff'
+                });
+
+                canvas.toBlob(async function(blob) {
+                    try {
+                        const item = new ClipboardItem({ "image/png": blob });
+                        await navigator.clipboard.write([item]);
+                        alert("현재 페이지가 클립보드에 복사되었습니다!\n워드나 카카오톡 등 원하는 곳에 Ctrl+V로 붙여넣으세요.");
+                    } catch (clipboardErr) {
+                        console.error("Clipboard API failed", clipboardErr);
+                        alert("클립보드 복사를 지원하지 않는 환경입니다. 우측의 [PNG 저장]을 이용해주세요.");
+                    } finally {
+                        setExportingState(false);
+                    }
+                }, "image/png");
+
+            } catch (err) {
+                console.error(err);
+                alert("이미지 복사 중 오류가 발생했습니다.");
+                setExportingState(false);
             }
-          }, "image/png");
-        } catch (err) {
-          console.error(err);
-          alert("이미지 복사 중 오류가 발생했습니다.");
-          setExportingState(false);
         }
-      }
 
-      function copyAllPages() {
-        const validPages = state.pages.filter((p) => p.images.length > 0);
-        if (validPages.length === 0) {
-          openModal("알림", "복사할 이미지가 없습니다.", () => {});
-          return;
+        function copyAllPages() {
+            const validPages = state.pages.filter(p => p.images.length > 0);
+            if (validPages.length === 0) {
+                openModal("알림", "복사할 이미지가 없습니다.", () => {});
+                return;
+            }
+            
+            document.getElementById('copy-layout-modal').classList.remove('hidden');
         }
 
-        // 모달을 띄워 1열/2열 선택 유도
-        document.getElementById("copy-layout-modal").classList.remove("hidden");
-      }
+        async function executeCopyAll() {
+            closeCopyLayoutModal();
 
-      async function executeCopyAll() {
-        closeCopyLayoutModal();
+            const layoutMode = document.querySelector('input[name="copy-layout"]:checked').value;
+            const columns = parseInt(layoutMode, 10);
+            const maxPages = columns === 1 ? 5 : 10; 
 
-        // 라디오 버튼(1열/2열) 값 가져오기
-        const layoutMode = document.querySelector(
-          'input[name="copy-layout"]:checked',
-        ).value;
-        const columns = parseInt(layoutMode, 10);
-        const maxPages = columns === 1 ? 5 : 10; // 1열은 5장, 2열은 10장 제한
+            setExportingState(true);
+            showLoading("전체 이미지 병합 중...", `${columns}열 방식으로 페이지를 이어붙이고 있습니다.\n잠시만 기다려주세요.`);
 
-        setExportingState(true);
-        showLoading(
-          "전체 이미지 병합 중...",
-          `${columns}열 방식으로 페이지를 이어붙이고 있습니다.\n잠시만 기다려주세요.`,
-        );
-
-        try {
-          await buildHiddenRenderArea();
-
-          // 지정된 제한 수까지만 캡처 (빈 페이지는 제외되도록 hidden-render-area 생성 시 이미 걸러짐)
-          const nodesToCapture = Array.from(
-            document.getElementById("hidden-render-area").children,
-          ).slice(0, maxPages);
-
-          let canvases = [];
-          let maxWidth = 0;
-
-          // 먼저 각 페이지를 캡처하여 배열에 담고 최대 너비를 구함
-          for (let i = 0; i < nodesToCapture.length; i++) {
-            const canvas = await html2canvas(nodesToCapture[i], {
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              backgroundColor: "#ffffff",
-            });
-            canvases.push(canvas);
-            if (canvas.width > maxWidth) {
-              maxWidth = canvas.width;
-            }
-          }
-
-          let totalHeight = 0;
-          let totalWidth = 0;
-
-          // 1열 방식 치수 계산
-          if (columns === 1) {
-            totalWidth = maxWidth;
-            for (const canvas of canvases) {
-              totalHeight += canvas.height;
-            }
-          }
-          // 2열 방식 치수 계산
-          else {
-            totalWidth = maxWidth * 2;
-            for (let i = 0; i < canvases.length; i += 2) {
-              const h1 = canvases[i].height;
-              const h2 = i + 1 < canvases.length ? canvases[i + 1].height : 0;
-              totalHeight += Math.max(h1, h2); // 두 열 중 더 긴 높이를 기준
-            }
-          }
-
-          const mergedCanvas = document.createElement("canvas");
-          mergedCanvas.width = totalWidth;
-          mergedCanvas.height = totalHeight;
-          const ctx = mergedCanvas.getContext("2d");
-
-          // 배경을 흰색으로 채우기
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, totalWidth, totalHeight);
-
-          let currentY = 0;
-
-          // 1열 렌더링
-          if (columns === 1) {
-            for (const canvas of canvases) {
-              const xOffset = (maxWidth - canvas.width) / 2;
-              ctx.drawImage(canvas, xOffset, currentY);
-              currentY += canvas.height;
-            }
-          }
-          // 2열 렌더링
-          else {
-            for (let i = 0; i < canvases.length; i += 2) {
-              const c1 = canvases[i];
-              const c2 = i + 1 < canvases.length ? canvases[i + 1] : null;
-
-              const h1 = c1.height;
-              const h2 = c2 ? c2.height : 0;
-              const rowHeight = Math.max(h1, h2);
-
-              // 1열 위치 (좌측)
-              const xOffset1 = (maxWidth - c1.width) / 2;
-              ctx.drawImage(c1, xOffset1, currentY);
-
-              // 2열 위치 (우측)
-              if (c2) {
-                const xOffset2 = maxWidth + (maxWidth - c2.width) / 2;
-                ctx.drawImage(c2, xOffset2, currentY);
-              }
-
-              currentY += rowHeight;
-            }
-          }
-
-          mergedCanvas.toBlob(async function (blob) {
             try {
-              const item = new ClipboardItem({ "image/png": blob });
-              await navigator.clipboard.write([item]);
-              openModal(
-                "복사 완료",
-                `총 ${canvases.length}장의 페이지가 ${columns}열 이미지로 복사되었습니다!\n(워드나 메신저에 Ctrl+V로 붙여넣기)`,
-                () => {},
-              );
-            } catch (clipboardErr) {
-              console.error("Clipboard API failed", clipboardErr);
-              openModal(
-                "복사 실패",
-                "클립보드 복사를 지원하지 않는 환경입니다. 우측의 [PNG 저장]을 이용해주세요.",
-                () => {},
-              );
+                await buildHiddenRenderArea();
+                
+                const nodesToCapture = Array.from(document.getElementById('hidden-render-area').children).slice(0, maxPages);
+                
+                let canvases = [];
+                let maxWidth = 0;
+
+                for (let i = 0; i < nodesToCapture.length; i++) {
+                    const canvas = await html2canvas(nodesToCapture[i], {
+                        scale: 2, 
+                        useCORS: true,
+                        logging: false,
+                        backgroundColor: '#ffffff'
+                    });
+                    canvases.push(canvas);
+                    if (canvas.width > maxWidth) {
+                        maxWidth = canvas.width;
+                    }
+                }
+
+                let totalHeight = 0;
+                let totalWidth = 0;
+
+                if (columns === 1) {
+                    totalWidth = maxWidth;
+                    for (const canvas of canvases) {
+                        totalHeight += canvas.height;
+                    }
+                } 
+                else {
+                    totalWidth = maxWidth * 2;
+                    for (let i = 0; i < canvases.length; i += 2) {
+                        const h1 = canvases[i].height;
+                        const h2 = i + 1 < canvases.length ? canvases[i + 1].height : 0;
+                        totalHeight += Math.max(h1, h2); 
+                    }
+                }
+
+                const mergedCanvas = document.createElement("canvas");
+                mergedCanvas.width = totalWidth;
+                mergedCanvas.height = totalHeight;
+                const ctx = mergedCanvas.getContext("2d");
+
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+                let currentY = 0;
+                
+                if (columns === 1) {
+                    for (const canvas of canvases) {
+                        const xOffset = (maxWidth - canvas.width) / 2;
+                        ctx.drawImage(canvas, xOffset, currentY);
+                        currentY += canvas.height;
+                    }
+                } 
+                else {
+                    for (let i = 0; i < canvases.length; i += 2) {
+                        const c1 = canvases[i];
+                        const c2 = i + 1 < canvases.length ? canvases[i + 1] : null;
+
+                        const h1 = c1.height;
+                        const h2 = c2 ? c2.height : 0;
+                        const rowHeight = Math.max(h1, h2);
+
+                        const xOffset1 = (maxWidth - c1.width) / 2;
+                        ctx.drawImage(c1, xOffset1, currentY);
+
+                        if (c2) {
+                            const xOffset2 = maxWidth + (maxWidth - c2.width) / 2;
+                            ctx.drawImage(c2, xOffset2, currentY);
+                        }
+
+                        currentY += rowHeight;
+                    }
+                }
+
+                mergedCanvas.toBlob(async function(blob) {
+                    try {
+                        const item = new ClipboardItem({ "image/png": blob });
+                        await navigator.clipboard.write([item]);
+                        openModal("복사 완료", `총 ${canvases.length}장의 페이지가 ${columns}열 이미지로 복사되었습니다!\n(워드나 메신저에 Ctrl+V로 붙여넣기)`, () => {});
+                    } catch (clipboardErr) {
+                        console.error("Clipboard API failed", clipboardErr);
+                        openModal("복사 실패", "클립보드 복사를 지원하지 않는 환경입니다. 우측의 [PNG 저장]을 이용해주세요.", () => {});
+                    } finally {
+                        setExportingState(false);
+                        hideLoading();
+                    }
+                }, "image/png");
+
+            } catch (err) {
+                console.error(err);
+                openModal("오류", "이미지 병합 중 오류가 발생했습니다.", () => {});
+                setExportingState(false);
+                hideLoading();
+            }
+        }
+
+        async function exportPDF() {
+            const totalImages = state.pages.reduce((acc, p) => acc + p.images.length, 0);
+            if (totalImages === 0) return alert("변환할 이미지가 없습니다.");
+
+            setExportingState(true);
+            try {
+                await buildHiddenRenderArea();
+                
+                const { jsPDF } = window.jspdf;
+                const orientation = state.paperSize === 'a5' ? 'l' : 'p';
+                const pdf = new jsPDF(orientation, 'mm', state.paperSize);
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                let pagesAdded = 0;
+
+                const nodesToCapture = Array.from(document.getElementById('hidden-render-area').children);
+                
+                for (let i = 0; i < nodesToCapture.length; i++) {
+                    if (pagesAdded > 0) pdf.addPage();
+                    const canvas = await html2canvas(nodesToCapture[i], {
+                        scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff'
+                    });
+                    const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                    pagesAdded++;
+                }
+                pdf.save('receipts_export.pdf');
+            } catch (err) {
+                console.error(err);
+                alert("PDF 변환 중 오류가 발생했습니다.");
             } finally {
-              setExportingState(false);
-              hideLoading();
+                setExportingState(false);
             }
-          }, "image/png");
-        } catch (err) {
-          console.error(err);
-          openModal("오류", "이미지 병합 중 오류가 발생했습니다.", () => {});
-          setExportingState(false);
-          hideLoading();
         }
-      }
 
-      async function exportPDF() {
-        const totalImages = state.pages.reduce(
-          (acc, p) => acc + p.images.length,
-          0,
-        );
-        if (totalImages === 0) return alert("변환할 이미지가 없습니다.");
+        async function exportImages() {
+            const totalImages = state.pages.reduce((acc, p) => acc + p.images.length, 0);
+            if (totalImages === 0) return alert("저장할 이미지가 없습니다.");
 
-        setExportingState(true);
-        try {
-          await buildHiddenRenderArea();
+            setExportingState(true);
 
-          const { jsPDF } = window.jspdf;
-          const orientation = state.paperSize === "a5" ? "l" : "p";
-          const pdf = new jsPDF(orientation, "mm", state.paperSize);
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = pdf.internal.pageSize.getHeight();
-          let pagesAdded = 0;
+            try {
+                await buildHiddenRenderArea();
+                const nodesToCapture = Array.from(document.getElementById('hidden-render-area').children);
+                
+                if (nodesToCapture.length === 1) {
+                    const canvas = await html2canvas(nodesToCapture[0], {
+                        scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff'
+                    });
+                    const imgDataUrl = canvas.toDataURL('image/png');
+                    const downloadLink = document.createElement("a");
+                    downloadLink.href = imgDataUrl;
+                    downloadLink.download = "receipt_page_1.png";
+                    downloadLink.click();
+                } else {
+                    const zip = new JSZip();
+                    for (let i = 0; i < nodesToCapture.length; i++) {
+                        const canvas = await html2canvas(nodesToCapture[i], {
+                            scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff'
+                        });
+                        const imgDataUrl = canvas.toDataURL('image/png');
+                        const base64Data = imgDataUrl.split(',')[1];
+                        zip.file(`receipt_page_${i + 1}.png`, base64Data, {base64: true});
+                    }
+                    const content = await zip.generateAsync({type:"blob"});
+                    const downloadLink = document.createElement("a");
+                    downloadLink.href = URL.createObjectURL(content);
+                    downloadLink.download = "receipts_images.zip";
+                    downloadLink.click();
+                    URL.revokeObjectURL(downloadLink.href);
+                }
 
-          const nodesToCapture = Array.from(
-            document.getElementById("hidden-render-area").children,
-          );
-
-          for (let i = 0; i < nodesToCapture.length; i++) {
-            if (pagesAdded > 0) pdf.addPage();
-            const canvas = await html2canvas(nodesToCapture[i], {
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              backgroundColor: "#ffffff",
-            });
-            const imgData = canvas.toDataURL("image/jpeg", 1.0);
-            pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
-            pagesAdded++;
-          }
-          pdf.save("receipts_export.pdf");
-        } catch (err) {
-          console.error(err);
-          alert("PDF 변환 중 오류가 발생했습니다.");
-        } finally {
-          setExportingState(false);
-        }
-      }
-
-      async function exportImages() {
-        const totalImages = state.pages.reduce(
-          (acc, p) => acc + p.images.length,
-          0,
-        );
-        if (totalImages === 0) return alert("저장할 이미지가 없습니다.");
-
-        setExportingState(true);
-
-        try {
-          await buildHiddenRenderArea();
-          const nodesToCapture = Array.from(
-            document.getElementById("hidden-render-area").children,
-          );
-
-          if (nodesToCapture.length === 1) {
-            const canvas = await html2canvas(nodesToCapture[0], {
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              backgroundColor: "#ffffff",
-            });
-            const imgDataUrl = canvas.toDataURL("image/png");
-            const downloadLink = document.createElement("a");
-            downloadLink.href = imgDataUrl;
-            downloadLink.download = "receipt_page_1.png";
-            downloadLink.click();
-          } else {
-            const zip = new JSZip();
-            for (let i = 0; i < nodesToCapture.length; i++) {
-              const canvas = await html2canvas(nodesToCapture[i], {
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                backgroundColor: "#ffffff",
-              });
-              const imgDataUrl = canvas.toDataURL("image/png");
-              const base64Data = imgDataUrl.split(",")[1];
-              zip.file(`receipt_page_${i + 1}.png`, base64Data, {
-                base64: true,
-              });
+            } catch (err) {
+                console.error(err);
+                alert("이미지 저장 중 오류가 발생했습니다.");
+            } finally {
+                setExportingState(false);
             }
-            const content = await zip.generateAsync({ type: "blob" });
-            const downloadLink = document.createElement("a");
-            downloadLink.href = URL.createObjectURL(content);
-            downloadLink.download = "receipts_images.zip";
-            downloadLink.click();
-            URL.revokeObjectURL(downloadLink.href);
-          }
-        } catch (err) {
-          console.error(err);
-          alert("이미지 저장 중 오류가 발생했습니다.");
-        } finally {
-          setExportingState(false);
         }
-      }
 
-      window.addEventListener("DOMContentLoaded", init);
+        window.addEventListener('DOMContentLoaded', init);
     </script>
-  </body>
+</body>
 </html>
